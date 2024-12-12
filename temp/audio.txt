@@ -1,0 +1,71 @@
+[32m2024-12-05 14:52:46.421[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate[0m:[36m294[0m - [1mVerbosity set to INFO[0m
+{'group': 'mix_evals_image2text', 'task': ['mix_evals_image2text_mc', 'mix_evals_image2text_freeform']}
+{'type': 'group', 'task': -1, 'yaml_path': '/home1/hxl/disk/EAGLE/lmms_eval/tasks/mix_evals/image2text/mix_evals_image2text.yaml'}
+[32m2024-12-05 14:52:48.675[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate_single[0m:[36m377[0m - [1mEvaluation tracker args: {'output_path': './output/eval/'}[0m
+[32m2024-12-05 14:52:48.675[0m | [1mINFO    [0m | [36m__main__[0m:[36mcli_evaluate_single[0m:[36m466[0m - [1mSelected Tasks: ['librispeech'][0m
+[32m2024-12-05 14:52:48.676[0m | [1mINFO    [0m | [36mlmms_eval.evaluator[0m:[36msimple_evaluate[0m:[36m155[0m - [1mSetting random seed to 0 | Setting numpy seed to 1234 | Setting torch manual seed to 1234[0m
+[32m2024-12-05 14:53:10.600[0m | [1mINFO    [0m | [36mlmms_eval.evaluator_utils[0m:[36mfrom_taskdict[0m:[36m91[0m - [1mNo metadata found in task config for librispeech_dev_clean, using default n_shot=0[0m
+[32m2024-12-05 14:53:10.600[0m | [1mINFO    [0m | [36mlmms_eval.evaluator_utils[0m:[36mfrom_taskdict[0m:[36m91[0m - [1mNo metadata found in task config for librispeech_dev_other, using default n_shot=0[0m
+[32m2024-12-05 14:53:10.600[0m | [1mINFO    [0m | [36mlmms_eval.evaluator_utils[0m:[36mfrom_taskdict[0m:[36m91[0m - [1mNo metadata found in task config for librispeech_test_clean, using default n_shot=0[0m
+[32m2024-12-05 14:53:10.601[0m | [1mINFO    [0m | [36mlmms_eval.evaluator_utils[0m:[36mfrom_taskdict[0m:[36m91[0m - [1mNo metadata found in task config for librispeech_test_other, using default n_shot=0[0m
+[32m2024-12-05 14:53:10.601[0m | [1mINFO    [0m | [36mlmms_eval.api.task[0m:[36mbuild_all_requests[0m:[36m425[0m - [1mBuilding contexts for librispeech_dev_clean on rank 0...[0m
+[32m2024-12-05 14:53:44.215[0m | [1mINFO    [0m | [36mlmms_eval.api.task[0m:[36mbuild_all_requests[0m:[36m425[0m - [1mBuilding contexts for librispeech_dev_other on rank 0...[0m
+[32m2024-12-05 14:54:03.458[0m | [1mINFO    [0m | [36mlmms_eval.api.task[0m:[36mbuild_all_requests[0m:[36m425[0m - [1mBuilding contexts for librispeech_test_clean on rank 0...[0m
+[32m2024-12-05 14:54:23.214[0m | [1mINFO    [0m | [36mlmms_eval.api.task[0m:[36mbuild_all_requests[0m:[36m425[0m - [1mBuilding contexts for librispeech_test_other on rank 0...[0m
+[32m2024-12-05 14:54:42.084[0m | [1mINFO    [0m | [36mlmms_eval.evaluator[0m:[36mevaluate[0m:[36m446[0m - [1mRunning generate_until requests[0m
+ref: mister quilter is the apostle of the middle classes and we are glad to welcome his gospel
+pred: the is a speech
+ref_items:
+['mister', 'quilter', 'is', 'the', 'apostle', 'of', 'the', 'middle', 'classes', 'and', 'we', 'are', 'glad', 'to', 'welcome', 'his', 'gospel']
+17
+mister
+pred_items:
+['the', 'is', 'a', 'speech']
+17
+mister
+ref: as i approached the city i heard bells ringing and a little later i found the streets astir with throngs of well dressed people in family groups wending their way hither and thither
+pred: the is a speech
+ref_items:
+['as', 'i', 'approached', 'the', 'city', 'i', 'heard', 'bells', 'ringing', 'and', 'a', 'little', 'later', 'i', 'found', 'the', 'streets', 'astir', 'with', 'throngs', 'of', 'well', 'dressed', 'people', 'in', 'family', 'groups', 'wending', 'their', 'way', 'hither', 'and', 'thither']
+33
+as
+pred_items:
+['the', 'is', 'a', 'speech']
+33
+as
+ref: he hoped there would be stew for dinner turnips and carrots and bruised potatoes and fat mutton pieces to be ladled out in thick peppered flour fattened sauce
+pred: the is a speech
+ref_items:
+['he', 'hoped', 'there', 'would', 'be', 'stew', 'for', 'dinner', 'turnips', 'and', 'carrots', 'and', 'bruised', 'potatoes', 'and', 'fat', 'mutton', 'pieces', 'to', 'be', 'ladled', 'out', 'in', 'thick', 'peppered', 'flour', 'fattened', 'sauce']
+28
+he
+pred_items:
+['the', 'is', 'a', 'speech']
+28
+he
+ref: there is iron they say in all our blood and a grain or 2 perhaps is good but his he makes me harshly feel has got a little too much of steel anon
+pred: the is a speech
+ref_items:
+['there', 'is', 'iron', 'they', 'say', 'in', 'all', 'our', 'blood', 'and', 'a', 'grain', 'or', '2', 'perhaps', 'is', 'good', 'but', 'his', 'he', 'makes', 'me', 'harshly', 'feel', 'has', 'got', 'a', 'little', 'too', 'much', 'of', 'steel', 'anon']
+33
+there
+pred_items:
+['the', 'is', 'a', 'speech']
+33
+there
+[32m2024-12-05 15:46:09.272[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_aggregated[0m:[36m188[0m - [1mSaving results aggregated[0m
+[32m2024-12-05 15:46:09.283[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_samples[0m:[36m255[0m - [1mSaving per-sample results for: librispeech_dev_clean[0m
+[32m2024-12-05 15:46:09.365[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_samples[0m:[36m255[0m - [1mSaving per-sample results for: librispeech_dev_other[0m
+[32m2024-12-05 15:46:09.451[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_samples[0m:[36m255[0m - [1mSaving per-sample results for: librispeech_test_clean[0m
+[32m2024-12-05 15:46:09.528[0m | [1mINFO    [0m | [36mlmms_eval.loggers.evaluation_tracker[0m:[36msave_results_samples[0m:[36m255[0m - [1mSaving per-sample results for: librispeech_test_other[0m
+eagle (pretrained=./checkpoints/final_result1/audio_finetune_1epoch,conv_template=llama3), gen_kwargs: (), limit: None, num_fewshot: None, batch_size: 1
+|          Tasks          |Version|Filter|n-shot|Metric|   | Value |   |Stderr|
+|-------------------------|-------|------|-----:|------|---|------:|---|------|
+|librispeech              |    N/A|      |      |      |   |       |   |      |
+| - librispeech_dev_clean |Yaml   |none  |     0|wer   |↓  |95.8119|±  |   N/A|
+| - librispeech_dev_other |Yaml   |none  |     0|wer   |↓  |95.6355|±  |   N/A|
+| - librispeech_test_clean|Yaml   |none  |     0|wer   |↓  |95.9417|±  |   N/A|
+| - librispeech_test_other|Yaml   |none  |     0|wer   |↓  |95.8738|±  |   N/A|
+
+./checkpoints/final_result1/audio_finetune_1epoch
+librispeech

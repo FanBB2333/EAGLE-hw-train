@@ -1,0 +1,17 @@
+*__pycache__*
+.cache/*
+*.ipynb_checkpoints/*
+*.vscode/*
+*apex/*
+*assets/*
+checkpoints/*
+dataset/*
+flash-attention/*
+model/*
+*pytorch-image-models/*
+*runs/*
+*wandb/*
+*LICENSE*
+*README.md*
+*.gitignore*
+*.git*
