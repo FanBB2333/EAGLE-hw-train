@@ -16,7 +16,7 @@
 # MODEL_PATH=./model/Eagle-X4-8B-Plus
 # MODEL_PATH=./checkpoints/final_result/image/finetune-eagle-x1-llama3.2-1b-image_L
 # MODEL_PATH=./checkpoints/final_result/video/video_finetune_1epoch
-# MODEL_PATH=./checkpoints/final_result1/video_finetune_1epoch
+# MODEL_PATH=./checkpoints/video_finetune_1epoch
 MODEL_PATH=./checkpoints/final_result1/audio_finetune_1epoch
 MODEL_NAME=eagle
 # CONV_MODE=vicuna_v1

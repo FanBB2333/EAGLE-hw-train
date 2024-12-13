@@ -73,5 +73,5 @@ Error with ['/home1/hxl/disk/EAGLE/.cache/huggingface/mvbench_video/vlnqa/forwar
 Error with ['/home1/hxl/disk/EAGLE/.cache/huggingface/mvbench_video/Moments_in_Time_Raw/videos/validation/stretching/getty-young-woman-exercises-for-the-hips-video-id598749824_8.mp4']
 Results None
 [32m2024-12-08 21:33:44.106[0m | [31m[1mERROR   [0m | [36m__main__[0m:[36mcli_evaluate[0m:[36m348[0m - [31m[1mError during evaluation: 'NoneType' object is not iterable. Please set `--verbosity=DEBUG` to get more information.[0m
-./checkpoints/final_result1/video_finetune_1epoch
+./checkpoints/video_finetune_1epoch
 mvbench
