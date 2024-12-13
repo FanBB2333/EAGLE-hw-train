@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 import sys
-sys.path.append('./')
+sys.path.append('.')
+sys.path.append('..')
 
 import argparse
 import logging
@@ -17,6 +18,7 @@ try:
     from eagle.conversation import conv_templates, SeparatorStyle
 except ImportError:
     eval_logger.error("Please add a symbolic link pointing to the eagle folder of repo ")
+    raise ImportError("omg")
 
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
