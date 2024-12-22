@@ -35,12 +35,16 @@ class Breakfast(VideoDS):
         name = 'Breakfast'
         super().__init__(name)
         self.db_path = db_path
+        self.anno_path = self.db_path / "segmentation_coarse"
+        self.video_path = self.db_path / "BreakfastII_15fps_qvga_sync"
 
 class Charades(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'Charades'):
         name = 'Charades'
         super().__init__(name)
         self.db_path = db_path
+        self.anno_path = self.db_path
+        self.video_path = self.db_path / "Charades_v1_480"
 
 class QVHighlights(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'QVHighlights'):

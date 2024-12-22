@@ -102,7 +102,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
     print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}")
-    return
+    # return
     test_dataset = PointLLMDataset()
     test_dataloader = DataLoader(
         test_dataset,
