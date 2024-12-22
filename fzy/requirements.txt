@@ -1,0 +1,4 @@
+transformers
+torchvision==0.14.1
+torchauido
+numpy==1.26.0

@@ -9,7 +9,7 @@ import logging
 from typing import Union
 from tqdm import tqdm
 
-eval_logger = logging.getLogger("eval_3d")
+eval_logger = logging.getLogger("eval_video")
 
 try:
     from eagle.model.builder import load_pretrained_model
