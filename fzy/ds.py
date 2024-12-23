@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 from pathlib import Path
 PROJECT_BASE = Path(__file__).resolve().parents[1]
 DATASET_BASE = PROJECT_BASE / 'dataset'
+DEFAULT_VIDEO_TOKEN = '<video_token>'
 
 class VideoDS(Dataset):
     def __init__(self, name):
@@ -50,7 +51,7 @@ class ActivityNet(VideoDS):
                 sentence = v['sentences'][idx]
                 timestamps = v['timestamps'][idx]
                 self.data.append({
-                    'video_file': video_file,
+                    'data_path': video_file,
                     'question': sentence,
                     'answer': timestamps
                 })
@@ -65,6 +66,10 @@ class Breakfast(VideoDS):
         self.db_path = db_path
         self.anno_path = self.db_path / "segmentation_coarse"
         self.video_path = self.db_path / "BreakfastII_15fps_qvga_sync"
+        
+    def load_data(self):
+        pass
+    
 
 class Charades(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'Charades'):
@@ -78,7 +83,7 @@ class Charades(VideoDS):
     def load_data(self):
         test_name = "charades_sta_test.txt"
         # each line is a sample
-        with open(self.anno_path/test_name, "r") as f:
+        with open(self.anno_path / test_name, "r") as f:
             lines = f.readlines()
         # line sample: 3MSZA 24.3 30.4##person turn a light on.
         data = list()
@@ -97,7 +102,7 @@ class Charades(VideoDS):
                 start_time = float(start_time)
                 end_time = float(end_time)
                 sample = {
-                    "video_file": str(self.video_path / f"{video_id}.mp4"),
+                    "data_path": str(self.video_path / f"{video_id}.mp4"),
                     "start_time": start_time,
                     "end_time": end_time,
                     "description": description,
@@ -106,8 +111,21 @@ class Charades(VideoDS):
             except Exception as e:
                 print(f"Failed to parse line: {line}, error: {e}")
         print(f"Loaded {len(data)} samples ")
-        self.data = data
+    
+        # convert to "data_path": ,question: ,answer:
+        ret = list()
+        for item in data:
+            query = item["description"]
+            duration = item["end_time"] - item["start_time"]
+            ret.append({
+                "data_path": item["data_path"],
+                "question": query,
+                "answer": [item["start_time"], item["end_time"]]
+            })
+        self.data = ret
                 
+    def collate_fn(self, batch):
+        return batch
 
 class QVHighlights(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'QVHighlights'):

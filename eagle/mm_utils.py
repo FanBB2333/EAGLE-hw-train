@@ -209,8 +209,11 @@ def process_images(images, image_processor, model_cfg):
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
+    # image token index: <video_token>
+    # print(f"prompt: {prompt}")
     prompt_chunks = [tokenizer(chunk).input_ids for chunk in prompt.split('<image>')]
-
+    # print(f"len(prompt_chunks): {len(prompt_chunks)}")
+    
     def insert_separator(X, sep):
         return [ele for sublist in zip(X, [sep]*len(X)) for ele in sublist][:-1]
 
@@ -223,6 +226,7 @@ def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX
     for x in insert_separator(prompt_chunks, [image_token_index] * (offset + 1)):
         input_ids.extend(x[offset:])
 
+    # print(f"input_ids: {input_ids}")
     if return_tensors is not None:
         if return_tensors == 'pt':
             return torch.tensor(input_ids, dtype=torch.long)

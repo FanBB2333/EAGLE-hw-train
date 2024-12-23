@@ -9,8 +9,11 @@ import logging
 from typing import Union
 from tqdm import tqdm
 import time
+from pathlib import Path
+import json
 
 eval_logger = logging.getLogger("eval_video")
+CURRENT_DIR = Path(__file__).resolve().parent
 
 try:
     from eagle.model.builder import load_pretrained_model
@@ -24,7 +27,7 @@ except ImportError:
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
-from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights
+from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights, DEFAULT_VIDEO_TOKEN
 
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -113,27 +116,35 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     elif task == "breakfast":
         ds = Breakfast()
     elif task == "charades":
-        print("init charades")
         ds = Charades()
     elif task == "qvhighlights":
         ds = QVHighlights()
     else:
         raise NotImplementedError(f"Task {task} not implemented")
+    # return
     
-    return
     model.cuda()
     # time.sleep(100)
     # test_dataset = PointLLMDataset()
-    # test_dataloader = DataLoader(
-    #     test_dataset,
-    #     collate_fn=test_dataset.collate_fn
-    # )
-    test_dataloader = [{
-        "data_path": "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/v1-2/val/v_ZMTi498qnPc.mp4",
-        "question": "What does the video show at first?",
-        "answer": "Red"
-    }]
 
+    test_dataloader = [{
+        # "data_path": "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/v1-2/val/v_ZMTi498qnPc.mp4",
+        # "data_path": "/home6/fzy/repos/EAGLE/dataset/Charades/Charades_v1_480/0BNML.mp4",
+        # "data_path": "/home6/fzy/repos/EAGLE/dataset/Charades/Charades_v1_480/0BZAD.mp4",
+        "data_path": "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/all_test/v__4S7eaL-cR8.mp4",
+        "question": "What does the video show?",
+        "answer": "xxx"
+    }]
+    test_dataloader = ds
+    # test_dataloader = DataLoader(
+    #     ds,
+    #     collate_fn=ds.collate_fn,
+    #     batch_size=1,
+    #     shuffle=False,
+    # )
+
+
+    gen_list = list()
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
     for i, data in enumerate(test_dataloader):
         # data = data[0]
@@ -146,16 +157,26 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
 
         question = data["question"]
         answer = data["answer"]
-
-        # DEFAULT_POINT_TOKEN 是点云的，视频的可能需要重写，可以参考如下方式修改prompt
-        if DEFAULT_POINT_TOKEN not in question:
-            question = DEFAULT_POINT_TOKEN + '\n' + question
+        duration = data["answer"][1] - data["answer"][0]
+        # format to .2f
+        duration = float(f"{duration:.2f}")
         
+        question = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video.'
+        
+        if DEFAULT_IMAGE_TOKEN not in question:
+            question = DEFAULT_IMAGE_TOKEN + '\n' + question
+        # args.conv_template: llama3
         conv = conv_templates[args.conv_template].copy()
+        # 0: user, 1: assistant
         conv.append_message(conv.roles[0], question)
-        conv.append_message(conv.roles[1], None)
-        prompt_question = conv.get_prompt()
+        conv.append_message(conv.roles[1], f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: ')
 
+        # conv.append_message(conv.roles[0], question)
+        # conv.append_message(conv.roles[1], None)
+        
+        prompt_question = conv.get_prompt()
+        # print(prompt_question)
+        # return
         input_ids = tokenizer_image_token(
             prompt_question, 
             tokenizer, 
@@ -163,7 +184,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             return_tensors="pt"
         )
         pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
-        print(input_ids)
+        # print(input_ids)
         input_ids = pad_sequence(
             tokenizer=tokenizer,
             input_ids=[input_ids], 
@@ -202,7 +223,14 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         #     eval_logger.error(f"Error {e} in generating")
         #     cont = ""
         #     text_outputs = [""]
+        gen_list.append({
+            "task": task,
+            **data,
+            "prediction": text_outputs[0],
+        })
         pbar.update(1)
+        with open(str(CURRENT_DIR.parent / "output" / f"{task}_output.json"), "w") as f:
+            json.dump(gen_list, f, indent=4)
     pbar.close()
 
 
