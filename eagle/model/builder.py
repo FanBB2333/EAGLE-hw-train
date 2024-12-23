@@ -35,14 +35,19 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
+from accelerate import Accelerator
 from eagle.model import *
 from eagle.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, distributed=None, **kwargs):
     # BEGIN hxl
     if device_map == "":
         device_map = "auto"
+    if distributed is not None:
+        accelerator = distributed
+        device_map = {"": accelerator.process_index}
+        
 
     kwargs = {"device_map": device_map, **kwargs}
 
@@ -161,7 +166,11 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if not vision_tower.is_loaded:
             vision_tower.load_model(device_map=device_map)
         if device_map != 'auto':
-            vision_tower.to(device=device_map, dtype=torch.float16)
+            if distributed is not None:
+                vision_tower.to(device=f"cuda:{accelerator.process_index}", dtype=torch.float16)
+            else:
+                # normal
+                vision_tower.to(device=device_map, dtype=torch.float16)
         image_processor = vision_tower.image_processor
     # BRGIN hxl
     # load for other modal

@@ -11,6 +11,7 @@ from tqdm import tqdm
 import time
 from pathlib import Path
 import json
+from accelerate import Accelerator
 
 eval_logger = logging.getLogger("eval_video")
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -34,7 +35,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default="./checkpoints/final_result1/3d_finetune_1epoch", 
+        default="./checkpoints/video_finetune_1epoch", 
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -97,10 +98,12 @@ def parse_eval_args() -> argparse.Namespace:
 
 @torch.no_grad()
 def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
+    accelerator = Accelerator()
     tokenizer, model, image_processor, max_length = load_pretrained_model(
         model_path=args.model_path,
         model_base=None,
-        model_name=args.model_name
+        model_name=args.model_name,
+        distributed=accelerator,
     )
     model.eval()
     modality = 'image'
@@ -234,6 +237,126 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     pbar.close()
 
 
+@torch.no_grad()
+def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
+    accelerator = Accelerator()
+    tokenizer, model, image_processor, max_length = load_pretrained_model(
+        model_path=args.model_path,
+        model_base=None,
+        model_name=args.model_name,
+        distributed=accelerator,
+    )
+    model.eval()
+    modality = 'image'
+    if 'video' in args.model_path.lower() or '3d' in args.model_path.lower():
+        modality = 'video'
+    elif 'audio' in args.model_path.lower():
+        modality = 'audio'
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {args.task}")
+    # initialize dataset according to args.task
+    task = args.task
+    if task == "activitynet":
+        ds = ActivityNet()
+    elif task == "breakfast":
+        ds = Breakfast()
+    elif task == "charades":
+        ds = Charades()
+    elif task == "qvhighlights":
+        ds = QVHighlights()
+    else:
+        raise NotImplementedError(f"Task {task} not implemented")
+    test_dataloader = ds.data
+    accelerator.wait_for_everyone()
+    with accelerator.split_between_processes(test_dataloader) as batch:
+        print(f"Generating {len(batch)} samples")
+        results=dict(outputs=[])
+        for data in tqdm(batch, desc="Generating samples"):
+            image_tensor = process_images(
+                images=data["data_path"],
+                image_processor=image_processor,
+                model_cfg=model.config
+            )
+            image_tensor = image_tensor.to("cuda", dtype=torch.float16)
+
+            question = data["question"]
+            answer = data["answer"]
+            duration = data["answer"][1] - data["answer"][0]
+            # format to .2f
+            duration = float(f"{duration:.2f}")
+            
+            question = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video.'
+            
+            if DEFAULT_IMAGE_TOKEN not in question:
+                question = DEFAULT_IMAGE_TOKEN + '\n' + question
+            # args.conv_template: llama3
+            conv = conv_templates[args.conv_template].copy()
+            # 0: user, 1: assistant
+            conv.append_message(conv.roles[0], question)
+            conv.append_message(conv.roles[1], f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: ')
+
+            # conv.append_message(conv.roles[0], question)
+            # conv.append_message(conv.roles[1], None)
+            
+            prompt_question = conv.get_prompt()
+            # print(prompt_question)
+            # return
+            input_ids = tokenizer_image_token(
+                prompt_question, 
+                tokenizer, 
+                IMAGE_TOKEN_INDEX, 
+                return_tensors="pt"
+            )
+            pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+            # print(input_ids)
+            input_ids = pad_sequence(
+                tokenizer=tokenizer,
+                input_ids=[input_ids], 
+                batch_first=True, 
+                padding_value=pad_token_ids
+            ).to(args.device)
+            attention_masks = input_ids.ne(pad_token_ids).to(args.device)
+
+            gen_kwargs = {}
+            if "max_new_tokens" not in gen_kwargs:
+                gen_kwargs["max_new_tokens"] = 1024
+            if "temperature" not in gen_kwargs:
+                gen_kwargs["temperature"] = 0
+            if "top_p" not in gen_kwargs:
+                gen_kwargs["top_p"] = None
+            if "num_beams" not in gen_kwargs:
+                gen_kwargs["num_beams"] = 1
+
+            # try:
+            cont = model.generate(
+                input_ids,
+                attention_mask=attention_masks,
+                pad_token_id=pad_token_ids,
+                images=image_tensor,
+                do_sample=True if gen_kwargs["temperature"] > 0 else False,
+                temperature=gen_kwargs["temperature"],
+                top_p=gen_kwargs["top_p"],
+                num_beams=gen_kwargs["num_beams"],
+                max_new_tokens=gen_kwargs["max_new_tokens"],
+                use_cache=args.use_cache,
+                modality=modality,
+            )
+            text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
+            print(text_outputs)
+            # except Exception as e:
+            #     eval_logger.error(f"Error {e} in generating")
+            #     cont = ""
+            #     text_outputs = [""]
+            results["outputs"].append({
+                "task": task,
+                **data,
+                "prediction": text_outputs[0],
+            })
+        results = [results]
+    gathered = accelerator.gather(results)
+    with open(str(CURRENT_DIR.parent / "output" / f"{task}_output_dist.json"), "w") as f:
+        json.dump(gathered, f, indent=4)
+
+
 def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tensor:
     if tokenizer.padding_side == "left":
         input_ids = [torch.flip(_input_ids, [0]) for _input_ids in input_ids]
@@ -244,4 +367,5 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 
 if __name__ == "__main__":
     args = parse_eval_args()
-    evaluate(args=args)
+    # evaluate(args=args)
+    evaluate_dist(args=args)
