@@ -98,6 +98,40 @@ def parse_eval_args() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+def gen_prompt(data, args):
+    question = data["question"]
+    answer = data["answer"]
+    task = args.task
+    if task == "activitynet":
+        duration = data["duration"]
+        # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+        # question2 = f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: '
+        # question2 = "The event starts at 00:"
+        # question1 = "What is the video about?"
+        # question2 = "The video is about: "
+        
+    elif task == "charades":
+        duration = data["answer"][1] - data["answer"][0]
+        duration = float(f"{duration:.2f}")
+        # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video. The event starts at:'
+        # question2 = f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: '
+        
+    question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+    
+    if DEFAULT_IMAGE_TOKEN not in question1:
+        question1 = DEFAULT_IMAGE_TOKEN + '\n' + question1
+    # args.conv_template: llama3
+    conv = conv_templates[args.conv_template].copy()
+    # 0: user, 1: assistant
+    conv.append_message(conv.roles[0], question1)
+    # conv.append_message(conv.roles[1], question2)
+    # conv.append_message(conv.roles[0], question)
+    # conv.append_message(conv.roles[1], None)
+    prompt_question = conv.get_prompt()
+    return prompt_question
+
+
+
 @torch.no_grad()
 def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     accelerator = Accelerator()
@@ -160,28 +194,9 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         )
         image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
 
-        question = data["question"]
-        answer = data["answer"]
-        duration = data["answer"][1] - data["answer"][0]
-        # format to .2f
-        duration = float(f"{duration:.2f}")
-        
-        question = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video.'
-        
-        if DEFAULT_IMAGE_TOKEN not in question:
-            question = DEFAULT_IMAGE_TOKEN + '\n' + question
-        # args.conv_template: llama3
-        conv = conv_templates[args.conv_template].copy()
-        # 0: user, 1: assistant
-        conv.append_message(conv.roles[0], question)
-        conv.append_message(conv.roles[1], f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: ')
-
-        # conv.append_message(conv.roles[0], question)
-        # conv.append_message(conv.roles[1], None)
-        
-        prompt_question = conv.get_prompt()
+        prompt_question = gen_prompt(data, args)
         # print(prompt_question)
-        # return
+        
         input_ids = tokenizer_image_token(
             prompt_question, 
             tokenizer, 
@@ -280,26 +295,28 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
             )
             image_tensor = image_tensor.to("cuda", dtype=torch.float16)
 
-            question = data["question"]
-            answer = data["answer"]
-            duration = data["answer"][1] - data["answer"][0]
-            # format to .2f
-            duration = float(f"{duration:.2f}")
+            # question = data["question"]
+            # answer = data["answer"]
+            # duration = data["answer"][1] - data["answer"][0]
+            # # format to .2f
+            # duration = float(f"{duration:.2f}")
             
-            question = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video.'
+            # question = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video.'
             
-            if DEFAULT_IMAGE_TOKEN not in question:
-                question = DEFAULT_IMAGE_TOKEN + '\n' + question
-            # args.conv_template: llama3
-            conv = conv_templates[args.conv_template].copy()
-            # 0: user, 1: assistant
-            conv.append_message(conv.roles[0], question)
-            conv.append_message(conv.roles[1], f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: ')
+            # if DEFAULT_IMAGE_TOKEN not in question:
+            #     question = DEFAULT_IMAGE_TOKEN + '\n' + question
+            # # args.conv_template: llama3
+            # conv = conv_templates[args.conv_template].copy()
+            # # 0: user, 1: assistant
+            # conv.append_message(conv.roles[0], question)
+            # conv.append_message(conv.roles[1], f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: ')
 
             # conv.append_message(conv.roles[0], question)
             # conv.append_message(conv.roles[1], None)
             
-            prompt_question = conv.get_prompt()
+            # prompt_question = conv.get_prompt()
+            
+            prompt_question = gen_prompt(data, args)
             # print(prompt_question)
             # return
             input_ids = tokenizer_image_token(

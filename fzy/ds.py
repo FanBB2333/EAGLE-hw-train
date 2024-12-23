@@ -38,7 +38,7 @@ class ActivityNet(VideoDS):
     def load_data(self):
         # load from the val1 and val2 data
         splits = [self.val1, self.val2, self.train]
-        split = splits[2]
+        split = splits[0]
         self.data = list()
         for k, v in split.items():
             # k: id
@@ -47,15 +47,16 @@ class ActivityNet(VideoDS):
             if not os.path.exists(video_file):
                 video_file = video_file.with_suffix(".mkv")
                 if not os.path.exists(video_file):
-                    print(f"Video file not found: {video_file}")
+                    # print(f"Video file not found: {video_file}")
                     continue
             for idx in range(len(v['sentences'])):
                 sentence = v['sentences'][idx]
                 timestamps = v['timestamps'][idx]
                 self.data.append({
-                    'data_path': video_file,
+                    'data_path': str(video_file),
                     'question': sentence,
-                    'answer': timestamps
+                    'answer': timestamps,
+                    'duration': v['duration'],
                 })
 
         print(f"[{self.name}] length of data: {len(self.data)}")
