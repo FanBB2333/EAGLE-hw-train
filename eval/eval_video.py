@@ -8,6 +8,7 @@ import argparse
 import logging
 from typing import Union
 from tqdm import tqdm
+import time
 
 eval_logger = logging.getLogger("eval_video")
 
@@ -23,6 +24,8 @@ except ImportError:
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
+from fzy.ds import ActivityNet
+
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
@@ -37,8 +40,9 @@ def parse_eval_args() -> argparse.Namespace:
         help="Name of model e.g. `hf`"
     )
     parser.add_argument(
-        "--tasks",
+        "--task",
         default=None,
+        choices=["activitynet", "breakfast", "charades", "qvhighlights"],
         help="To get full list of tasks, use the command lmms-eval --tasks list",
     )
     parser.add_argument(
@@ -101,26 +105,46 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         modality = 'video'
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
-    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}")
-    # return
-    test_dataset = PointLLMDataset()
-    test_dataloader = DataLoader(
-        test_dataset,
-        collate_fn=test_dataset.collate_fn
-    )
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {args.task}")
+    # initialize dataset according to args.task
+    task = args.task
+    if task == "activitynet":
+        ds = ActivityNet()
+    elif task == "breakfast":
+        ds = []
+    elif task == "charades":
+        ds = []
+    elif task == "qvhighlights":
+        ds = []
+    else:
+        raise NotImplementedError(f"Task {task} not implemented")
+    
+    return
+    model.cuda()
+    # time.sleep(100)
+    # test_dataset = PointLLMDataset()
+    # test_dataloader = DataLoader(
+    #     test_dataset,
+    #     collate_fn=test_dataset.collate_fn
+    # )
+    test_dataloader = [{
+        "data_path": "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/v1-2/val/v_ZMTi498qnPc.mp4",
+        "question": "What does the video show at first?",
+        "answer": "Red"
+    }]
 
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
     for i, data in enumerate(test_dataloader):
-        data = data[0]
+        # data = data[0]
         image_tensor = process_images(
-            images=data.data_path,
+            images=data["data_path"],
             image_processor=image_processor,
             model_cfg=model.config
         )
         image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
 
-        question = data.question
-        answer = data.answer
+        question = data["question"]
+        answer = data["answer"]
 
         # DEFAULT_POINT_TOKEN 是点云的，视频的可能需要重写，可以参考如下方式修改prompt
         if DEFAULT_POINT_TOKEN not in question:
