@@ -31,7 +31,7 @@ class ActivityNet(VideoDS):
         self.val1 = json.load(open(db_path / 'val_1.json'))
         self.val2 = json.load(open(db_path / 'val_2.json'))
         # self.video_path = self.db_path / "all_test"
-        self.video_path = self.db_path / "v1-2/val"
+        self.video_path = self.db_path / "v1-3/train_val"
         print(f"[{name}] length of val1: {len(self.val1)}, val2: {len(self.val2)}")
         self.load_data()
     
@@ -45,8 +45,10 @@ class ActivityNet(VideoDS):
             # v: {'duration': 55.15, 'timestamps': [[0.28, 55.15], [13.79, 54.32]], 'sentences': ['A weight lifting tutorial is given.', '  The coach helps the guy in red with the proper body placement and lifting technique.']}
             video_file = self.video_path / f"{k}.mp4"
             if not os.path.exists(video_file):
-                print(f"File {video_file} does not exist")
-                continue
+                video_file = video_file.with_suffix(".mkv")
+                if not os.path.exists(video_file):
+                    print(f"Video file not found: {video_file}")
+                    continue
             for idx in range(len(v['sentences'])):
                 sentence = v['sentences'][idx]
                 timestamps = v['timestamps'][idx]
