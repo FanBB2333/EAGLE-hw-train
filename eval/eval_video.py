@@ -24,7 +24,7 @@ except ImportError:
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
-from fzy.ds import ActivityNet
+from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights
 
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -111,11 +111,12 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     if task == "activitynet":
         ds = ActivityNet()
     elif task == "breakfast":
-        ds = []
+        ds = Breakfast()
     elif task == "charades":
-        ds = []
+        print("init charades")
+        ds = Charades()
     elif task == "qvhighlights":
-        ds = []
+        ds = QVHighlights()
     else:
         raise NotImplementedError(f"Task {task} not implemented")
     

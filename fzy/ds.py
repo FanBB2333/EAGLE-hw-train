@@ -51,8 +51,8 @@ class ActivityNet(VideoDS):
                 timestamps = v['timestamps'][idx]
                 self.data.append({
                     'video_file': video_file,
-                    'sentence': sentence,
-                    'timestamps': timestamps
+                    'question': sentence,
+                    'answer': timestamps
                 })
 
         print(f"[{self.name}] length of data: {len(self.data)}")
@@ -73,6 +73,41 @@ class Charades(VideoDS):
         self.db_path = db_path
         self.anno_path = self.db_path
         self.video_path = self.db_path / "Charades_v1_480"
+        self.load_data()
+    
+    def load_data(self):
+        test_name = "charades_sta_test.txt"
+        # each line is a sample
+        with open(self.anno_path/test_name, "r") as f:
+            lines = f.readlines()
+        # line sample: 3MSZA 24.3 30.4##person turn a light on.
+        data = list()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parts = line.split("##")
+                if len(parts) != 2:
+                    raise ValueError("Invalid format in line: " + line)
+
+                video_info, description = parts
+                video_id, start_time, end_time = video_info.split()
+
+                start_time = float(start_time)
+                end_time = float(end_time)
+                sample = {
+                    "video_file": str(self.video_path / f"{video_id}.mp4"),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "description": description,
+                }
+                data.append(sample)
+            except Exception as e:
+                print(f"Failed to parse line: {line}, error: {e}")
+        print(f"Loaded {len(data)} samples ")
+        self.data = data
+                
 
 class QVHighlights(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'QVHighlights'):
@@ -90,7 +125,17 @@ class QVHighlights(VideoDS):
             for obj in reader:
                 data.append(obj)
         return data
-
+    def load_data(self):
+        self.data = list()
+        for line in self.test:
+            self.data.append({
+                'video_file': line['video'],
+                'question': line['query'],
+                'answer': line['timestamps'],
+                'duration': line['duration'],
+                'qid': line['qid'],
+            })
+        
      
 def test():
     import json
