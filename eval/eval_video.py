@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 import json
 from accelerate import Accelerator
+from accelerate.utils import gather_object
 
 eval_logger = logging.getLogger("eval_video")
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -93,6 +94,7 @@ def parse_eval_args() -> argparse.Namespace:
         metavar="DIR",
         help="A path to a sqlite db file for caching model responses. `None` if not caching.",
     )
+    parser.add_argument('--distributed', action='store_true', help='Distributed evaluation')
     args = parser.parse_args()
     return args
 
@@ -352,7 +354,7 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
                 "prediction": text_outputs[0],
             })
         results = [results]
-    gathered = accelerator.gather(results)
+    gathered = gather_object(results)
     with open(str(CURRENT_DIR.parent / "output" / f"{task}_output_dist.json"), "w") as f:
         json.dump(gathered, f, indent=4)
 
@@ -367,5 +369,7 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 
 if __name__ == "__main__":
     args = parse_eval_args()
-    # evaluate(args=args)
-    evaluate_dist(args=args)
+    if args.distributed:
+        evaluate_dist(args=args)
+    else:
+        evaluate(args=args)
