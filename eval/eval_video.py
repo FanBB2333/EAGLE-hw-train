@@ -109,15 +109,19 @@ def gen_prompt(data, args):
         # question2 = "The event starts at 00:"
         # question1 = "What is the video about?"
         # question2 = "The video is about: "
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
         
     elif task == "charades":
         duration = data["answer"][1] - data["answer"][0]
         duration = float(f"{duration:.2f}")
         # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video. The event starts at:'
         # question2 = f'The video\'s duration is {duration}s. The event "{data["question"]}" starts at: '
-        
-    question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
-    
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+    elif task == "qvhighlights":
+        duration = data["duration"]
+        question1 = f"{data['question']}"
+
+
     if DEFAULT_IMAGE_TOKEN not in question1:
         question1 = DEFAULT_IMAGE_TOKEN + '\n' + question1
     # args.conv_template: llama3

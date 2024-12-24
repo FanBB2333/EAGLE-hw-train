@@ -135,10 +135,12 @@ class QVHighlights(VideoDS):
         name = 'QVHighlights'
         super().__init__(name)
         self.db_path = db_path
-        annotations = self.db_path / 'annotations'
-        self.test = self.load_jsonl(annotations / 'highlight_test_release.jsonl')
-        self.train = self.load_jsonl(annotations / 'highlight_train_release.jsonl')
-        self.val = self.load_jsonl(annotations / 'highlight_val_release.jsonl')
+        self.anno_path = self.db_path / 'annotations'
+        self.video_path = self.db_path / 'videos'
+        self.test = self.load_jsonl(self.anno_path / 'highlight_test_release.jsonl')
+        self.train = self.load_jsonl(self.anno_path / 'highlight_train_release.jsonl')
+        self.val = self.load_jsonl(self.anno_path / 'highlight_val_release.jsonl')
+        self.load_data()
         
     def load_jsonl(self, path):
         data = list()
@@ -149,13 +151,17 @@ class QVHighlights(VideoDS):
     def load_data(self):
         self.data = list()
         for line in self.test:
+            video_file = self.video_path / f"{line['vid']}.mp4"
+            if not video_file.exists():
+                continue
             self.data.append({
-                'video_file': line['video'],
-                'question': line['query'],
-                'answer': line['timestamps'],
+                'data_path': str(video_file),
+                'question': "What does the video show?",
+                'answer': line['query'],
                 'duration': line['duration'],
                 'qid': line['qid'],
             })
+        print(f"[{self.name}] length of data: {len(self.data)}")
         
      
 def test():

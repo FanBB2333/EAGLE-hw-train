@@ -1,6 +1,6 @@
 #!/bin/bash
 export PYTHONPATH=$(pwd):/home6/fzy/repos/EAGLE
-TASK=activitynet
+TASK=qvhighlights
 # choices=["activitynet", "breakfast", "charades", "qvhighlights"],
 MODEL_PATH=./checkpoints/video_finetune_1epoch
 
