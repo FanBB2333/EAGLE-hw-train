@@ -364,7 +364,7 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
                 modality=modality,
             )
             text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
-            print(text_outputs)
+            # print(text_outputs)
             # except Exception as e:
             #     eval_logger.error(f"Error {e} in generating")
             #     cont = ""
