@@ -119,8 +119,13 @@ def gen_prompt(data, args):
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     elif task == "qvhighlights":
         duration = data["duration"]
-        question1 = f"{data['question']}"
-
+        answers = data["answer"]
+        # question1 = f"{data['question']}"
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+    elif task == "breakfast":
+        pass
+    else:
+        raise NotImplementedError(f"Task {task} not implemented")
 
     if DEFAULT_IMAGE_TOKEN not in question1:
         question1 = DEFAULT_IMAGE_TOKEN + '\n' + question1

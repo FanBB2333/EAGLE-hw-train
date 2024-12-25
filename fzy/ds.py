@@ -149,19 +149,32 @@ class QVHighlights(VideoDS):
                 data.append(obj)
         return data
     def load_data(self):
+        # self.data = list()
+        # for line in self.test:
+        #     video_file = self.video_path / f"{line['vid']}.mp4"
+        #     if not video_file.exists():
+        #         continue
+        #     self.data.append({
+        #         'data_path': str(video_file),
+        #         'question': "What does the video show?",
+        #         'answer': line['query'],
+        #         'duration': line['duration'],
+        #         'qid': line['qid'],
+        #     })
+        # print(f"[{self.name}] length of test data: {len(self.data)}")
         self.data = list()
-        for line in self.test:
+        for line in self.val:
             video_file = self.video_path / f"{line['vid']}.mp4"
             if not video_file.exists():
                 continue
             self.data.append({
                 'data_path': str(video_file),
-                'question': "What does the video show?",
-                'answer': line['query'],
+                'question': line['query'],
+                'answer': line['relevant_windows'],
                 'duration': line['duration'],
                 'qid': line['qid'],
             })
-        print(f"[{self.name}] length of data: {len(self.data)}")
+        print(f"[{self.name}] length of val data: {len(self.data)}")
         
      
 def test():
