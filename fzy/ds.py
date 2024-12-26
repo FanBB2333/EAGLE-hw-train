@@ -4,11 +4,38 @@ from torch.utils.data import Dataset, DataLoader
 import os
 from PIL import Image
 from tqdm import tqdm
+from copy import deepcopy
 import torchvision.transforms as transforms
+import cv2
 from pathlib import Path
 PROJECT_BASE = Path(__file__).resolve().parents[1]
 DATASET_BASE = PROJECT_BASE / 'dataset'
 DEFAULT_VIDEO_TOKEN = '<video_token>'
+def get_video_length(video_path):
+    # 打开视频文件
+    cap = cv2.VideoCapture(video_path)
+
+    # 检查视频是否成功打开
+    if not cap.isOpened():
+        print(f"Cannot open video file: {video_path}")
+        return None
+
+    # 获取总帧数
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # 获取帧率
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    # 计算视频时长（秒）
+    if fps > 0:
+        video_length = frame_count / fps
+    else:
+        print("Unable to retrieve FPS from the video.")
+        return None
+
+    # 释放视频资源
+    cap.release()
+
+    return video_length
 
 class VideoDS(Dataset):
     def __init__(self, name):
@@ -69,9 +96,50 @@ class Breakfast(VideoDS):
         self.db_path = db_path
         self.anno_path = self.db_path / "segmentation_coarse"
         self.video_path = self.db_path / "BreakfastII_15fps_qvga_sync"
+        self.load_data()
         
     def load_data(self):
-        pass
+        # list the subdirs in video_path with depth=1
+        dir_p = [x for x in self.video_path.iterdir() if x.is_dir()]
+        # iter over the dirs
+        data = list()
+        for p in tqdm(dir_p, desc="Loading Breakfast data"):
+            dir_cams = [x for x in p.iterdir() if x.is_dir()]
+            for cam in dir_cams:
+                video_files = list(cam.glob('*.avi'))
+                for video_file in video_files:
+                    video_id = video_file.stem
+                    anno_file = cam / f"{video_id}.avi.labels"
+                    if not anno_file.exists():
+                        # print(f"Annotation file not found: {anno_file}, video: {video_file}")
+                        continue
+                    video_seg = list()
+                    with open(anno_file, "r") as f:
+                        lines = f.readlines()
+                    # line sample: 55-233 pour_cereals 
+                    for line in lines:
+                        parts = line.strip().split()
+                        if len(parts) != 2:
+                            continue
+                        start, end = parts[0].split("-")
+                        start = int(start)
+                        end = int(end)
+                        action = parts[1]
+                        video_seg.append({
+                            "start": start,
+                            "end": end,
+                            "action": action,
+                        })
+                    data.append({
+                        "data_path": str(video_file),
+                        "segments": video_seg,
+                        'duration': get_video_length(video_file),
+                    })
+        self.data = data
+        print(f"[{self.name}] length of data: {len(self.data)}")
+
+            
+        
     
 
 class Charades(VideoDS):
@@ -149,32 +217,40 @@ class QVHighlights(VideoDS):
                 data.append(obj)
         return data
     def load_data(self):
-        # self.data = list()
-        # for line in self.test:
-        #     video_file = self.video_path / f"{line['vid']}.mp4"
-        #     if not video_file.exists():
-        #         continue
-        #     self.data.append({
-        #         'data_path': str(video_file),
-        #         'question': "What does the video show?",
-        #         'answer': line['query'],
-        #         'duration': line['duration'],
-        #         'qid': line['qid'],
-        #     })
-        # print(f"[{self.name}] length of test data: {len(self.data)}")
-        self.data = list()
+        splits = {
+            "train": self.train,
+            "val": self.val,
+            "test": self.test,
+        }
+        data = list()
+        for line in self.test:
+            video_file = self.video_path / f"{line['vid']}.mp4"
+            if not video_file.exists():
+                continue
+            data.append({
+                'data_path': str(video_file),
+                'question': "What does the video show?",
+                'answer': line['query'],
+                'duration': line['duration'],
+                'qid': line['qid'],
+            })
+        splits['test'] = deepcopy(data)
+        
+        data = list()
         for line in self.val:
             video_file = self.video_path / f"{line['vid']}.mp4"
             if not video_file.exists():
                 continue
-            self.data.append({
+            data.append({
                 'data_path': str(video_file),
                 'question': line['query'],
                 'answer': line['relevant_windows'],
                 'duration': line['duration'],
                 'qid': line['qid'],
             })
-        print(f"[{self.name}] length of val data: {len(self.data)}")
+        splits['val'] = deepcopy(data)
+        print(f"[{self.name}] length of val data: {len(splits['val'])}, test: {len(splits['test'])}")
+        self.data = splits['val']
         
      
 def test():

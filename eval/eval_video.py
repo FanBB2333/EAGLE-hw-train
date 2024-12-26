@@ -99,9 +99,8 @@ def parse_eval_args() -> argparse.Namespace:
     return args
 
 def gen_prompt(data, args):
-    question = data["question"]
-    answer = data["answer"]
     task = args.task
+    question2 = None
     if task == "activitynet":
         duration = data["duration"]
         # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
@@ -123,7 +122,12 @@ def gen_prompt(data, args):
         # question1 = f"{data['question']}"
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     elif task == "breakfast":
-        pass
+        
+#{'User': f'The video lasts {duration:.1f} seconds. Please output the step-by-step actions the person is doing with start and end timestamps in the video.',
+# 'Assistant': 'Based on the provided video, the step-by-step actions the person is doing with start and end timestamps in the video are:\nFrom 00:'}
+        duration = data["duration"]
+        question1 = f'The video lasts {duration:.1f} seconds. Please output the step-by-step actions the person is doing with start and end timestamps in the video.'
+        question2 = f'Based on the provided video, the step-by-step actions the person is doing with start and end timestamps in the video are:\nFrom 00:'
     else:
         raise NotImplementedError(f"Task {task} not implemented")
 
@@ -133,6 +137,9 @@ def gen_prompt(data, args):
     conv = conv_templates[args.conv_template].copy()
     # 0: user, 1: assistant
     conv.append_message(conv.roles[0], question1)
+    if question2 is not None:
+        conv.append_message(conv.roles[1], question2)
+        
     # conv.append_message(conv.roles[1], question2)
     # conv.append_message(conv.roles[0], question)
     # conv.append_message(conv.roles[1], None)
