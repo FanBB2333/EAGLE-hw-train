@@ -68,7 +68,7 @@ def evaluate_predictions(predictions, ground_truths, thresholds=[0.3, 0.5, 0.7])
 
 def load_data():
     import json
-    datasets = ["activitynet", "charades", "qvhighlights"]
+    datasets = ["activitynet", "charades", "qvhighlights", "valor"]
     ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
     ret = dict()
     for dataset in datasets:

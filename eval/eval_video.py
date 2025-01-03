@@ -29,7 +29,7 @@ except ImportError:
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
-from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights, DEFAULT_VIDEO_TOKEN
+from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights, VALOR32K
 
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -47,7 +47,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument(
         "--task",
         default=None,
-        choices=["activitynet", "breakfast", "charades", "qvhighlights"],
+        choices=["activitynet", "breakfast", "charades", "qvhighlights", "valor"],
         help="To get full list of tasks, use the command lmms-eval --tasks list",
     )
     parser.add_argument(
@@ -128,6 +128,10 @@ def gen_prompt(data, args):
         duration = data["duration"]
         question1 = f'The video lasts {duration:.1f} seconds. Please output the step-by-step actions the person is doing with start and end timestamps in the video.'
         question2 = f'Based on the provided video, the step-by-step actions the person is doing with start and end timestamps in the video are:\nFrom 00:'
+    elif task == "valor":
+        duration = data["duration"]
+        # question1 = f"{data['question']}"
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     else:
         raise NotImplementedError(f"Task {task} not implemented")
 
@@ -174,6 +178,8 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         ds = Charades()
     elif task == "qvhighlights":
         ds = QVHighlights()
+    elif task == "valor":
+        ds = VALOR32K()
     else:
         raise NotImplementedError(f"Task {task} not implemented")
     # return
@@ -203,12 +209,16 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
     for i, data in enumerate(test_dataloader):
         # data = data[0]
-        image_tensor = process_images(
-            images=data["data_path"],
-            image_processor=image_processor,
-            model_cfg=model.config
-        )
-        image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+        try:
+            image_tensor = process_images(
+                images=data["data_path"],
+                image_processor=image_processor,
+                model_cfg=model.config
+            )
+            image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+        except Exception as e:
+            eval_logger.error(f"Error {e} in processing images")
+            continue
 
         prompt_question = gen_prompt(data, args)
         # print(prompt_question)

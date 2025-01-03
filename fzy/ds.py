@@ -1,4 +1,6 @@
 import json
+import random
+random.seed(42)
 import jsonlines
 from torch.utils.data import Dataset, DataLoader
 import os
@@ -36,6 +38,16 @@ def get_video_length(video_path):
     cap.release()
 
     return video_length
+
+form_yt_url = lambda x: f"https://www.youtube.com/watch?v={x}"
+def get_vid(fullname):
+    # x-2Abohj8VY_30.000_40.000 -> x-2Abohj8VY
+    # LXI2eW_dZoU_30.000_40.000 -> LXI2eW_dZoU
+    # split the video name
+    # 找到倒数第二个下划线的位置
+    second_last_underscore = fullname.rfind('_', 0, fullname.rfind('_'))
+    
+    return fullname[:second_last_underscore]
 
 class VideoDS(Dataset):
     def __init__(self, name):
@@ -252,7 +264,63 @@ class QVHighlights(VideoDS):
         print(f"[{self.name}] length of val data: {len(splits['val'])}, test: {len(splits['test'])}")
         self.data = splits['val']
         
-     
+
+class VALOR32K(VideoDS):
+    def __init__(self, db_path = DATASET_BASE / 'valor32k'):
+        name = 'valor32k'
+        super().__init__(name)
+        self.db_path = db_path
+        self.anno_path = self.db_path
+        self.video_path = self.db_path / "videos"
+        self.load_data()
+
+    def sample(self, n=18):
+        # load the json file
+        data = json.load(open(self.anno_path / "desc_test.json"))
+        print(f"[{self.name}] Total {len(data)} samples, sampling {n} samples")
+        # random sample n samples
+        sampled = random.sample(data, n)
+        sampled = deepcopy(sampled)
+        urls = list()
+        for item in data:
+            vid = item['video_id']
+            urls.append(form_yt_url(get_vid(vid)))
+        return urls
+    
+    def load_data(self):
+        desc_test = json.load(open(self.anno_path / "desc_test.json"))
+        id2test = dict()
+        for test_data in desc_test:
+            vid_full = test_data['video_id']
+            vid = get_vid(vid_full)
+            if vid not in id2test:
+                id2test[vid] = list()
+            id2test[vid].append(test_data)
+            
+        # list the videos in the video_path
+        video_files = list(self.video_path.glob("*.mp4"))
+        data = list()
+        for video_file in video_files:
+            video_id = video_file.stem
+            duration = get_video_length(video_file)
+            if video_id not in id2test:
+                continue
+            for test_data in id2test[video_id]:
+                query = test_data['desc']
+                time_splits = test_data['video_id'].split("_")
+                start_time = float(time_splits[-2])
+                end_time = float(time_splits[-1])
+                data.append({
+                    'data_path': str(video_file),
+                    'question': query,
+                    'duration': duration,
+                    'answer': [start_time, end_time],
+                })
+        self.data = data
+        print(f"[{self.name}] length of data: {len(self.data)}")
+        
+
+
 def test():
     import json
     path = "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/val_1.json"
