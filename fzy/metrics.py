@@ -68,13 +68,28 @@ def evaluate_predictions(predictions, ground_truths, thresholds=[0.3, 0.5, 0.7])
 
 def load_data():
     import json
-    datasets = ["activitynet", "charades", "qvhighlights", "valor"]
+    datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast"]
     ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
     ret = dict()
     for dataset in datasets:
         ret_ds = list()
         with open(ds2json(dataset), "r") as f:
             raw = json.load(f)
+        if dataset == "breakfast":
+            for item in raw:
+                splits = item["prediction"].split(".")
+                # if len(item["segments"]) != len(splits):
+                #     continue
+                for i in range(min(len(item["segments"]), len(splits))):
+                    prediction_start = get_predictions(splits[i])
+                    answer = [item["segments"][i]["start"] / 15, item["segments"][i]["end"] / 15]
+                    prediction_end = prediction_start + (answer[1] - answer[0])
+                    ret_ds.append({
+                        "predictions": [[prediction_start, prediction_end]],
+                        "ground_truths": [answer]
+                    })
+            ret[dataset] = ret_ds
+            continue
         for item in raw:
             prediction_start = get_predictions(item["prediction"])
             answer = item["answer"]
@@ -123,9 +138,9 @@ def main():
         results_all = list()
         for item in ds_data:
             results = evaluate_predictions(item["predictions"], item["ground_truths"])
-            if item["predictions"][0][0] == NONE_VALUE:
+            # if item["predictions"][0][0] == NONE_VALUE:
                 # print(f"Warning: {ds_name} has NONE_VALUE -> {results_all}")
-                continue
+                # continue
             results_all.append(results)
         # calculate the average of evaluation results
         mIoU = np.mean([item["mIoU"] for item in results_all])
