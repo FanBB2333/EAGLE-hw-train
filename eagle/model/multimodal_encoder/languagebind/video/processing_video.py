@@ -2,6 +2,7 @@ import cv2
 import decord
 import numpy as np
 import torch
+import signal
 from PIL import Image
 from decord import VideoReader, cpu
 from torchvision import transforms
@@ -21,6 +22,11 @@ def make_list_of_images(x):
     if not isinstance(x, list):
         return [x]
     return x
+
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Execution timed out!")
+
 
 def get_video_transform(config):
     config = config.config
@@ -89,11 +95,14 @@ def load_and_transform_video(
     elif video_decode_backend == 'decord':
         decord.bridge.set_bridge('torch')
         # BEGIN hxl
-        # decord_vr = VideoReader(video_path, ctx=cpu(0))
+        # decord_vr = VideoReader(video_path)
         decord_vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
         # END hxl
         duration = len(decord_vr)
         frame_id_list = np.linspace(0, duration-1, num_frames, dtype=int)
+        # for idx, frame in enumerate(frame_id_list):
+        #     data = decord_vr.get_batch([frame])
+        #     print(f"Success! get {idx}: {frame}")
         video_data = decord_vr.get_batch(frame_id_list)
         video_data = video_data.permute(3, 0, 1, 2)  # (T, H, W, C) -> (C, T, H, W)
         video_outputs = transform(video_data)

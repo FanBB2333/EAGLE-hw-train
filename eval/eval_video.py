@@ -3,7 +3,9 @@ from torch.utils.data import DataLoader
 import sys
 sys.path.append('.')
 sys.path.append('..')
-
+import timeout_decorator
+import signal
+import multiprocessing
 import argparse
 import logging
 from typing import Union
@@ -30,6 +32,7 @@ from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
 from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2
+handle_stuck = False
 
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -46,7 +49,7 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--task",
-        default=None,
+        default="youcook2",
         choices=["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2"],
         help="To get full list of tasks, use the command lmms-eval --tasks list",
     )
@@ -151,7 +154,35 @@ def gen_prompt(data, args):
     return prompt_question
 
 
+def timeout_handler(signum, frame):
+    raise TimeoutError("Execution timed out!")
 
+def get_image_tensor(data, image_processor, model, args):
+    try:
+        image_tensor = process_images(
+            images=data["data_path"],
+            image_processor=image_processor,
+            model_cfg=model.config
+        )
+        image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+    except Exception as e:
+        eval_logger.error(f"Error {e} in processing images")
+        return None
+
+# @timeout_decorator.timeout(3)
+def get_image_tensor_timeout(data, image_processor, model, args, queue):
+    try:
+        image_tensor = process_images(
+            images=data["data_path"],
+            image_processor=image_processor,
+            model_cfg=model.config
+        )
+        image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+        queue.put(("success", image_tensor))
+    except Exception as e:
+        queue.put(("error", str(e)))
+        
+            
 @torch.no_grad()
 def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     accelerator = Accelerator()
@@ -182,6 +213,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         ds = VALOR32K()
     elif task == "youcook2":
         ds = YouCook2()
+        # handle_stuck = True
     else:
         raise NotImplementedError(f"Task {task} not implemented")
     # return
@@ -205,23 +237,46 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     #     batch_size=1,
     #     shuffle=False,
     # )
-
-
+        
     gen_list = list()
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
     for i, data in enumerate(test_dataloader):
         # data = data[0]
-        try:
-            image_tensor = process_images(
-                images=data["data_path"],
-                image_processor=image_processor,
-                model_cfg=model.config
-            )
-            image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
-        except Exception as e:
-            eval_logger.error(f"Error {e} in processing images")
-            continue
 
+        if not handle_stuck:
+            try:
+                print(f"Loading {data['idx']} data")
+                image_tensor = process_images(
+                    images=data["data_path"],
+                    image_processor=image_processor,
+                    model_cfg=model.config
+                )
+                image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+            except Exception as e:
+                eval_logger.error(f"Error {e} in processing images")
+                continue
+        else:
+            queue = multiprocessing.Queue()
+            process = multiprocessing.Process(target=get_image_tensor_timeout, args=(data, image_processor, model, args, queue))
+            process.start()
+            # 设置超时时间（秒）
+            timeout = 5
+            process.join(timeout)
+
+            if process.is_alive():
+                print("Timeout: The task took too long to complete.")
+                process.terminate()  # 超时后强制终止进程
+                continue
+            else:
+                # 获取子进程的返回值
+                result, data = queue.get()
+            if result == "success":
+                image_tensor = data
+            else:
+                print("Error occurred:", data)
+                continue
+            if image_tensor is None:
+                continue
         prompt_question = gen_prompt(data, args)
         # print(prompt_question)
         

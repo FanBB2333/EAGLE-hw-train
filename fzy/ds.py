@@ -328,28 +328,42 @@ class YouCook2(VideoDS):
         self.anno_path = self.db_path
         self.video_path = self.db_path / "YouCookIIVideos"
         self.load_data()
+    
+    def filter_data(self, ignore_idx, data):
+        ret = list()
+        for idx, item in enumerate(data):
+            if idx == item['idx']:
+                continue
+            ret.append(item)
+        return ret
         
     def load_data(self):
         # val file
         val_file = self.anno_path / "youcook2_val.csv"
         val_data = pd.read_csv(val_file)
         data = list()
+        # cut val data
         for i in range(len(val_data)):
             row = val_data.iloc[i]
-            segment = row['segment'] # [46. 53.]
+            segment = row['segment']
             query = row['sentence']
             video_path = self.video_path / row['video_path']
             if not video_path.exists():
                 continue
-            start_time, end_time = segment[0], segment[1]
+            segment = segment.replace("[", "").replace("]", "").split()
+            start_time, end_time = float(segment[0]), float(segment[1])
             duration = get_video_length(video_path)
             data.append({
+                'idx': i,
                 'data_path': str(video_path),
                 'question': query,
                 'answer': [start_time, end_time],
                 'duration': duration,
             })
-        self.data = data
+        # self.data = data
+        ignore_idx = [1032, 1908, 3076]
+        self.data = self.filter_data(ignore_idx, data)
+        # self.data = data[ignore_idx[-1]+1:]
         print(f"[{self.name}] length of data: {len(self.data)}")
 
 def test():
