@@ -332,7 +332,7 @@ class YouCook2(VideoDS):
     def filter_data(self, ignore_idx, data):
         ret = list()
         for idx, item in enumerate(data):
-            if idx == item['idx']:
+            if item['idx'] in ignore_idx:
                 continue
             ret.append(item)
         return ret

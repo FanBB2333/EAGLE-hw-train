@@ -245,7 +245,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
 
         if not handle_stuck:
             try:
-                print(f"Loading {data['idx']} data")
+                # print(f"Loading {data['idx']} data")
                 image_tensor = process_images(
                     images=data["data_path"],
                     image_processor=image_processor,
