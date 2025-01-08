@@ -5,6 +5,7 @@ import jsonlines
 from torch.utils.data import Dataset, DataLoader
 import os
 from PIL import Image
+import pandas as pd
 from tqdm import tqdm
 from copy import deepcopy
 import torchvision.transforms as transforms
@@ -319,7 +320,37 @@ class VALOR32K(VideoDS):
         self.data = data
         print(f"[{self.name}] length of data: {len(self.data)}")
         
-
+class YouCook2(VideoDS):
+    def __init__(self, db_path = DATASET_BASE / 'youcook2'):
+        name = 'youcook2'
+        super().__init__(name)
+        self.db_path = db_path
+        self.anno_path = self.db_path
+        self.video_path = self.db_path / "YouCookIIVideos"
+        self.load_data()
+        
+    def load_data(self):
+        # val file
+        val_file = self.anno_path / "youcook2_val.csv"
+        val_data = pd.read_csv(val_file)
+        data = list()
+        for i in range(len(val_data)):
+            row = val_data.iloc[i]
+            segment = row['segment'] # [46. 53.]
+            query = row['sentence']
+            video_path = self.video_path / row['video_path']
+            if not video_path.exists():
+                continue
+            start_time, end_time = segment[0], segment[1]
+            duration = get_video_length(video_path)
+            data.append({
+                'data_path': str(video_path),
+                'question': query,
+                'answer': [start_time, end_time],
+                'duration': duration,
+            })
+        self.data = data
+        print(f"[{self.name}] length of data: {len(self.data)}")
 
 def test():
     import json
