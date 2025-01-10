@@ -240,6 +240,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         
     gen_list = list()
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
+    # model.get_vision_tower().config.num_frames = 16
     for i, data in enumerate(test_dataloader):
         # data = data[0]
 

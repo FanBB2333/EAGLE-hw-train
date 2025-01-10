@@ -99,6 +99,7 @@ def load_and_transform_video(
         decord_vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
         # END hxl
         duration = len(decord_vr)
+        print(f"Num frames: {num_frames}")
         frame_id_list = np.linspace(0, duration-1, num_frames, dtype=int)
         # for idx, frame in enumerate(frame_id_list):
         #     data = decord_vr.get_batch([frame])
