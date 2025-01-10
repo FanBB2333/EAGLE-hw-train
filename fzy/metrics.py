@@ -68,7 +68,8 @@ def evaluate_predictions(predictions, ground_truths, thresholds=[0.3, 0.5, 0.7])
 
 def load_data():
     import json
-    datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast"]
+    datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast", "youcook2"]
+    # datasets = ["activitynet", "charades", "qvhighlights", "valor", "youcook2"]
     ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
     ret = dict()
     for dataset in datasets:
@@ -142,6 +143,7 @@ def main():
                 # print(f"Warning: {ds_name} has NONE_VALUE -> {results_all}")
                 # continue
             results_all.append(results)
+        # print(f"Total samples: {len(results_all)}")
         # calculate the average of evaluation results
         mIoU = np.mean([item["mIoU"] for item in results_all])
         recall = {k: np.mean([item["Recall"][k] for item in results_all]) for k in results_all[0]["Recall"].keys()}
