@@ -70,7 +70,8 @@ def load_data():
     import json
     datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast", "youcook2"]
     # datasets = ["activitynet", "charades", "qvhighlights", "valor", "youcook2"]
-    ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
+    # ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
+    ds2json = lambda ds: CURRENT_PATH / "../output/3b" /f"{ds}_output.json"
     ret = dict()
     for dataset in datasets:
         ret_ds = list()

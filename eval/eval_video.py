@@ -307,23 +307,25 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         if "num_beams" not in gen_kwargs:
             gen_kwargs["num_beams"] = 1
 
-        # try:
-        cont = model.generate(
-            input_ids,
-            attention_mask=attention_masks,
-            pad_token_id=pad_token_ids,
-            images=image_tensor,
-            do_sample=True if gen_kwargs["temperature"] > 0 else False,
-            temperature=gen_kwargs["temperature"],
-            top_p=gen_kwargs["top_p"],
-            num_beams=gen_kwargs["num_beams"],
-            max_new_tokens=gen_kwargs["max_new_tokens"],
-            use_cache=args.use_cache,
-            modality=modality,
-        )
-        text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
-        print(text_outputs)
-        # except Exception as e:
+        try:
+            pbar.update(1)
+            cont = model.generate(
+                input_ids,
+                attention_mask=attention_masks,
+                pad_token_id=pad_token_ids,
+                images=image_tensor,
+                do_sample=True if gen_kwargs["temperature"] > 0 else False,
+                temperature=gen_kwargs["temperature"],
+                top_p=gen_kwargs["top_p"],
+                num_beams=gen_kwargs["num_beams"],
+                max_new_tokens=gen_kwargs["max_new_tokens"],
+                use_cache=args.use_cache,
+                modality=modality,
+            )
+            text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
+            # print(text_outputs)
+        except Exception as e:
+            continue
         #     eval_logger.error(f"Error {e} in generating")
         #     cont = ""
         #     text_outputs = [""]
@@ -332,8 +334,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             **data,
             "prediction": text_outputs[0],
         })
-        pbar.update(1)
-        with open(str(CURRENT_DIR.parent / "output" / f"{task}_output.json"), "w") as f:
+        with open(str(CURRENT_DIR.parent / "output/3b" / f"{task}_output.json"), "w") as f:
             json.dump(gen_list, f, indent=4)
     pbar.close()
 
@@ -470,6 +471,7 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 
 if __name__ == "__main__":
     args = parse_eval_args()
+    print(args)
     if args.distributed:
         evaluate_dist(args=args)
     else:
