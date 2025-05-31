@@ -31,7 +31,7 @@ except ImportError:
 from eval.dataset.pointllm import PointLLMDataset
 from eval.utils import DEFAULT_POINT_TOKEN
 
-from fzy.ds import ActivityNet, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2
+from fzy.ds import ActivityNetCaps, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2
 handle_stuck = False
 
 def parse_eval_args() -> argparse.Namespace:
@@ -202,7 +202,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     # initialize dataset according to args.task
     task = args.task
     if task == "activitynet":
-        ds = ActivityNet()
+        ds = ActivityNetCaps()
     elif task == "breakfast":
         ds = Breakfast()
     elif task == "charades":
@@ -358,7 +358,7 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
     # initialize dataset according to args.task
     task = args.task
     if task == "activitynet":
-        ds = ActivityNet()
+        ds = ActivityNetCaps()
     elif task == "breakfast":
         ds = Breakfast()
     elif task == "charades":

@@ -62,9 +62,9 @@ class VideoDS(Dataset):
         return self.data[idx]
 
 
-class ActivityNet(VideoDS):
-    def __init__(self, db_path = DATASET_BASE / 'ActivityNetCaps'):
-        name = 'ActivityNet'
+class ActivityNetCaps(VideoDS):
+    def __init__(self, db_path = DATASET_BASE / 'ActivityNetCaps', train=False):
+        name = 'ActivityNetCaps'
         super().__init__(name)
         self.db_path = db_path
         self.train = json.load(open(db_path / 'train.json'))
@@ -73,7 +73,10 @@ class ActivityNet(VideoDS):
         # self.video_path = self.db_path / "all_test"
         self.video_path = self.db_path / "v1-3/train_val"
         print(f"[{name}] length of val1: {len(self.val1)}, val2: {len(self.val2)}")
-        self.load_data()
+        if not train:
+            self.load_data()
+        else:
+            self.load_train()
     
     def load_data(self):
         # load from the val1 and val2 data
@@ -100,6 +103,32 @@ class ActivityNet(VideoDS):
                 })
 
         print(f"[{self.name}] length of data: {len(self.data)}")
+    
+    def load_train(self):
+        # load from the val1 and val2 data
+        splits = [self.val1, self.val2, self.train]
+        split = splits[2]
+        self.data = list()
+        for k, v in split.items():
+            # k: id
+            # v: {'duration': 55.15, 'timestamps': [[0.28, 55.15], [13.79, 54.32]], 'sentences': ['A weight lifting tutorial is given.', '  The coach helps the guy in red with the proper body placement and lifting technique.']}
+            video_file = self.video_path / f"{k}.mp4"
+            if not os.path.exists(video_file):
+                video_file = video_file.with_suffix(".mkv")
+                if not os.path.exists(video_file):
+                    # print(f"Video file not found: {video_file}")
+                    continue
+            for idx in range(len(v['sentences'])):
+                sentence = v['sentences'][idx]
+                timestamps = v['timestamps'][idx]
+                self.data.append({
+                    'data_path': str(video_file),
+                    'question': sentence,
+                    'answer': timestamps,
+                    'duration': v['duration'],
+                })
+
+        print(f"[Train] [{self.name}] length of data: {len(self.data)}")
         
 
 class Breakfast(VideoDS):
@@ -156,13 +185,16 @@ class Breakfast(VideoDS):
     
 
 class Charades(VideoDS):
-    def __init__(self, db_path = DATASET_BASE / 'Charades'):
+    def __init__(self, db_path = DATASET_BASE / 'Charades', train=False):
         name = 'Charades'
         super().__init__(name)
         self.db_path = db_path
         self.anno_path = self.db_path
         self.video_path = self.db_path / "Charades_v1_480"
-        self.load_data()
+        if not train:
+            self.load_data()
+        else:
+            self.load_train()
     
     def load_data(self):
         test_name = "charades_sta_test.txt"
@@ -210,9 +242,56 @@ class Charades(VideoDS):
                 
     def collate_fn(self, batch):
         return batch
+    
+    
+    def load_train(self):
+        test_name = "charades_sta_train.txt"
+        # each line is a sample
+        with open(self.anno_path / test_name, "r") as f:
+            lines = f.readlines()
+        # line sample: 3MSZA 24.3 30.4##person turn a light on.
+        data = list()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parts = line.split("##")
+                if len(parts) != 2:
+                    raise ValueError("Invalid format in line: " + line)
+
+                video_info, description = parts
+                video_id, start_time, end_time = video_info.split()
+
+                start_time = float(start_time)
+                end_time = float(end_time)
+                sample = {
+                    "data_path": str(self.video_path / f"{video_id}.mp4"),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "description": description,
+                }
+                data.append(sample)
+            except Exception as e:
+                print(f"Failed to parse line: {line}, error: {e}")
+    
+        # convert to "data_path": ,question: ,answer:
+        ret = list()
+        for item in data:
+            query = item["description"]
+            duration = item["end_time"] - item["start_time"]
+            ret.append({
+                "data_path": item["data_path"],
+                "question": query,
+                "answer": [item["start_time"], item["end_time"]]
+            })
+        self.data = ret
+        print(f"[Train] [{self.name}] Loaded {len(data)} samples ")
+
+
 
 class QVHighlights(VideoDS):
-    def __init__(self, db_path = DATASET_BASE / 'QVHighlights'):
+    def __init__(self, db_path = DATASET_BASE / 'QVHighlights', train=False):
         name = 'QVHighlights'
         super().__init__(name)
         self.db_path = db_path
@@ -221,8 +300,12 @@ class QVHighlights(VideoDS):
         self.test = self.load_jsonl(self.anno_path / 'highlight_test_release.jsonl')
         self.train = self.load_jsonl(self.anno_path / 'highlight_train_release.jsonl')
         self.val = self.load_jsonl(self.anno_path / 'highlight_val_release.jsonl')
-        self.load_data()
-        
+        if not train:
+            self.load_data()
+        else:
+            self.load_train()
+    
+    
     def load_jsonl(self, path):
         data = list()
         with jsonlines.open(path) as reader:
@@ -265,6 +348,30 @@ class QVHighlights(VideoDS):
         print(f"[{self.name}] length of val data: {len(splits['val'])}, test: {len(splits['test'])}")
         self.data = splits['val']
         
+
+    def load_train(self):
+        splits = {
+            "train": self.train,
+            "val": self.val,
+            "test": self.test,
+        }
+        data = list()
+        for line in self.train:
+            video_file = self.video_path / f"{line['vid']}.mp4"
+            if not video_file.exists():
+                continue
+            data.append({
+                'data_path': str(video_file),
+                'question': "What does the video show?",
+                'answer': line['query'],
+                'duration': line['duration'],
+                'qid': line['qid'],
+            })
+        splits['train'] = deepcopy(data)
+        
+        print(f"[Train] [{self.name}] length of val data: {len(splits['val'])}, test: {len(splits['test'])}")
+        self.data = splits['train']
+
 
 class VALOR32K(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'valor32k'):
@@ -323,13 +430,16 @@ class VALOR32K(VideoDS):
 
 
 class YouCook2(VideoDS):
-    def __init__(self, db_path = DATASET_BASE / 'youcook2'):
+    def __init__(self, db_path = DATASET_BASE / 'youcook2', train=False):
         name = 'youcook2'
         super().__init__(name)
         self.db_path = db_path
         self.anno_path = self.db_path
         self.video_path = self.db_path / "raw_videos"
-        self.load_data()
+        if not train:
+            self.load_data()
+        else:
+            self.load_train()
 
     def filter_data(self, ignore_idx, data):
         ret = list()
@@ -374,6 +484,44 @@ class YouCook2(VideoDS):
         self.data = self.filter_data(ignore_idx, data)
  
         print(f"[{self.name}] length of data: {len(self.data)}")
+        
+    def load_train(self):
+        val_video_path = self.video_path / "validation"
+        # val file
+        val_file = self.anno_path / "youcook2_val.csv"
+        val_data = pd.read_csv(val_file)
+        data = list()
+        for i in range(len(val_data)):
+            row = val_data.iloc[i]
+            segment = row['segment'] # [46. 53.]
+            query = row['sentence']
+            recipe_type = row['recipe_type']
+            video_path = val_video_path / str(recipe_type) / f"{row['youtube_id']}"
+            # test whether video_path.mp4 or video_path.mkv exist
+            mp4_path = video_path.with_suffix('.mp4')
+            mkv_path = video_path.with_suffix('.mkv')
+            if mp4_path.exists():
+                video_path = mp4_path
+            elif mkv_path.exists():
+                video_path = mkv_path
+            else:
+                continue
+            segment = segment.replace("[", "").replace("]", "").split()
+            start_time, end_time = float(segment[0]), float(segment[1])
+            duration = get_video_length(video_path)
+            data.append({
+                'idx': i,
+                'data_path': str(video_path),
+                'question': query,
+                'answer': [start_time, end_time],
+                'duration': duration,
+            })
+        # self.data = data
+        ignore_idx = [1032, 1908, 3076]
+        self.data = self.filter_data(ignore_idx, data)
+ 
+        print(f"[Train] [{self.name}] length of data: {len(self.data)}")
+        
         
         
     def load_data_old(self):
