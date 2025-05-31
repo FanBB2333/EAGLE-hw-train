@@ -369,7 +369,7 @@ class QVHighlights(VideoDS):
             })
         splits['train'] = deepcopy(data)
         
-        print(f"[Train] [{self.name}] length of val data: {len(splits['val'])}, test: {len(splits['test'])}")
+        print(f"[Train] [{self.name}] length of train data: {len(splits['train'])}")
         self.data = splits['train']
 
 

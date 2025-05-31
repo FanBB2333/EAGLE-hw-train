@@ -112,7 +112,6 @@ def gen_prompt(data, args):
         # question1 = "What is the video about?"
         # question2 = "The video is about: "
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
-        
     elif task == "charades":
         duration = data["answer"][1] - data["answer"][0]
         duration = float(f"{duration:.2f}")
@@ -125,7 +124,6 @@ def gen_prompt(data, args):
         # question1 = f"{data['question']}"
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     elif task == "breakfast":
-        
 #{'User': f'The video lasts {duration:.1f} seconds. Please output the step-by-step actions the person is doing with start and end timestamps in the video.',
 # 'Assistant': 'Based on the provided video, the step-by-step actions the person is doing with start and end timestamps in the video are:\nFrom 00:'}
         duration = data["duration"]
