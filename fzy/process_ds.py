@@ -19,6 +19,7 @@ try:
 except ImportError:
     raise ImportError("Import Error")
 from fzy.ds import *
+from fzy.video_8_frame_opencv import process_videos
 OUTPUT_DIR = DATASET_BASE / 'processed'
 
 def gen_prompt(data, task):
@@ -95,7 +96,7 @@ def ds2json(ds):
         # print(item)
         video_path = item['data_path']
         question = item['question']
-        answer = item['answer']
+        answer = f"{item['answer'][0]}s"
         duration = item['duration']
         # get result from gen_prompt
         conv, question1, question2 = gen_prompt(item, ds.name)
@@ -114,7 +115,12 @@ def ds2json(ds):
         json.dump(ret, f, indent=4)
     print(f"Processed {ds.name} dataset, saved to {output_file}")
     # save processed video files
-    
+    process_videos(
+        input_folder=str(ds.video_path),
+        output_folder=str(output_dir_ds / "videos")
+    )
+    print(f"Processed videos for {ds.name} dataset, saved to {output_dir_ds / 'videos'}")
+    return True
 
 
 def process_ds():
@@ -128,13 +134,8 @@ def process_ds():
     
     # initialize anc
     anc_obj = ds2json(anc)
-
-        
-
-    
-    
-
-    
+    charades_obj = ds2json(charades)
+    qvhl_obj = ds2json(qvhl)
 
 
 
