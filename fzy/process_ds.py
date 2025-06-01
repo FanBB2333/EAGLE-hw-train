@@ -95,9 +95,9 @@ def ds2json(ds):
     # })
         # print(item)
         video_path = item['data_path']
-        question = item['question']
+        # question = item['question']
         answer = f"{item['answer'][0]}s"
-        duration = item['duration']
+        # duration = item['duration']
         # get result from gen_prompt
         conv, question1, question2 = gen_prompt(item, ds.name)
         ds_item = sample_format_lambda(
@@ -133,7 +133,7 @@ def process_ds():
     print(f"Loading ds done")
     
     # initialize anc
-    anc_obj = ds2json(anc)
+    # anc_obj = ds2json(anc)
     charades_obj = ds2json(charades)
     qvhl_obj = ds2json(qvhl)
 

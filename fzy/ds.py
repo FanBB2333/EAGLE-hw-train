@@ -362,8 +362,8 @@ class QVHighlights(VideoDS):
                 continue
             data.append({
                 'data_path': str(video_file),
-                'question': "What does the video show?",
-                'answer': line['query'],
+                'question': line['query'],
+                'answer': line['relevant_windows'],
                 'duration': line['duration'],
                 'qid': line['qid'],
             })
