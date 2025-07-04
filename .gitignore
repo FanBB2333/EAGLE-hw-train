@@ -1,0 +1,9 @@
+checkpoints
+dataset
+*.tar
+*.tar.gz
+*.zip
+**/__pycache__
+model/
+output/
+*.whl
