@@ -1,9 +1,9 @@
-checkpoints
-dataset
+/checkpoints
+/dataset
 *.tar
 *.tar.gz
 *.zip
 **/__pycache__
-model/
-output/
+/model
+/output
 *.whl
