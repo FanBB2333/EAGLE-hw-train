@@ -287,6 +287,111 @@ class LanguageBindAudioTower(nn.Module):
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
 
+
+class Qwen2VLVideoTower(nn.Module):
+    def __init__(self, vision_tower, args, modality='video', delay_load=False):
+        super().__init__()
+        self.modality = modality
+
+        self.is_loaded = False
+
+        self.vision_tower_name = vision_tower
+        self.select_layer = args.mm_vision_select_layer
+        self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
+
+        self.load_model()
+        print(f"Vision tower {self.vision_tower_name} is loaded.")
+
+    def load_model(self, device_map=None):
+        if self.is_loaded:
+            print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
+            return
+        
+        target_version = version.parse("4.52.0")
+        current_version = version.parse(transformers.__version__)
+        if current_version >= target_version:
+            model = Qwen2VLModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+        elif current_version >= version.parse("4.51.3"):
+            # older transformers(4.51.3)
+            model = Qwen2VLForConditionalGeneration.from_pretrained(self.vision_tower_name, device_map=device_map)
+        # self.image_processor = Qwen2VLImageProcessor.from_pretrained(self.vision_tower_name)
+        self.image_processor = AutoProcessor.from_pretrained(
+            self.vision_tower_name, 
+            fixed_patch_size=(14, 14)
+        )
+        self.processor = AutoProcessor.from_pretrained(self.vision_tower_name)
+        self.visual = model.visual
+        # self.vision_tower.requires_grad_(False)
+        self.is_loaded = True
+
+
+    def get_video_features(
+        self, pixel_values_videos: torch.FloatTensor, video_grid_thw: Optional[torch.LongTensor] = None
+    ):
+        # raise ValueError("Stop")
+        pixel_values_videos = pixel_values_videos.type(self.visual.dtype)
+        # import pdb
+        # pdb.set_trace()
+        # print(f"pixel_values_videos shape: {pixel_values_videos.shape}")
+        # print(f"pixel_values_videos_dim:{pixel_values_videos.dim()}")
+        # print(f"video_grid_thw shape: {video_grid_thw.shape if video_grid_thw is not None else None}, needed shape: {torch.tensor([[4, 24, 42]]).shape}")
+        # video_grid_thw shape: torch.Size([2, 1, 3])
+        # video_grid_thw = None
+        if video_grid_thw is None:
+            video_grid_thw = torch.tensor([[4, 24, 42]] * pixel_values_videos.shape[0])
+        if pixel_values_videos.dim() == 3:
+            frame_embed_list = []
+            b, n, d = pixel_values_videos.shape
+            for i in range(0, b):
+                frame_embed_list.append(self.visual(pixel_values_videos[i], grid_thw=video_grid_thw[i]))
+            video_embeds = torch.stack(frame_embed_list, dim=0)
+            
+        return video_embeds
+
+
+    def forward(self, images: torch.FloatTensor, video_grid_thw: Optional[torch.LongTensor] = None):
+        with torch.no_grad():
+            if self.modality == 'video':
+                image_features = self.get_video_features(images, video_grid_thw=video_grid_thw)
+            else:
+                raise ValueError(f"Unsupported modality: {self.modality}")
+
+        return image_features
+
+
+    @property
+    def dummy_feature(self):
+        return torch.zeros(1, self.hidden_size, device=self.device, dtype=self.dtype)
+
+    @property
+    def dtype(self):
+        return next(self.parameters()).dtype
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    @property
+    def config(self):
+        if self.is_loaded:
+            return self.visual.config
+        else:
+            return self.cfg_only
+
+    @property
+    def hidden_size(self):
+        return self.config.hidden_size
+
+    @property
+    def num_patches_per_side(self):
+        return self.config.image_size // self.config.patch_size
+
+    @property
+    def num_patches(self):
+        return (self.config.image_size // self.config.patch_size) ** 2
+
+
+
 class FixedTokenQwen2VLImageProcessor(Qwen2VLImageProcessor):
     def __init__(self, *args, fixed_patch_size=None, **kwargs):
         super().__init__(*args, **kwargs)

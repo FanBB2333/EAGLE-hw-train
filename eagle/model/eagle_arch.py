@@ -359,8 +359,11 @@ class EagleMetaForCausalLM(ABC):
         audio_features = self.get_model().mm_projector(audio_features)
         return audio_features
     
-    def encode_videos(self, videos):
-        video_features = self.get_model().get_vision_tower()(videos) # torch.Size([2, 8, 1024])
+    def encode_videos(self, videos, video_grid_thw=None):
+        if "qwen2vl" in str(self.get_model().get_vision_tower()).lower():
+            video_features = self.get_model().get_vision_tower()(videos, video_grid_thw=video_grid_thw)
+        else:
+            video_features = self.get_model().get_vision_tower()(videos) # torch.Size([2, 8, 1024])
         # FUTURE adapt projection MoE here
         video_features = self.get_model().mm_projector(video_features)
         return video_features
@@ -373,7 +376,7 @@ class EagleMetaForCausalLM(ABC):
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images, modality, image_sizes=None, image_grid_thw=None,
+        images, modality, image_sizes=None, image_grid_thw=None, video_grid_thw=None
     ):
         # MoE loss always return, default none
         mlp_balanced_loss = None
@@ -448,7 +451,7 @@ class EagleMetaForCausalLM(ABC):
                 else:
                     image_features = self.encode_images(images, image_grid_thw) # torch.Size([8, 3, 224, 224]) -> torch.Size([8, 49, 2048])
             elif modality == 'video':
-                image_features = self.encode_videos(images)
+                image_features = self.encode_videos(images, video_grid_thw)
             elif modality == 'audio':
                 image_features = self.encode_audios(images)
             elif modality == '3d':

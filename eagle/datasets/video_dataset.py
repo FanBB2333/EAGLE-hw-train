@@ -6,8 +6,10 @@ import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
 
+import cv2
 import torch
 import numpy as np
+from packaging import version
 
 import transformers
 import tokenizers
@@ -331,6 +333,35 @@ class LazySupervisedDataset(Dataset):
             length_list.append(cur_len)
         return length_list
 
+    def _get_video_frames_(self, video_path, target_size = (588, 336), max_frames = 8) -> List:
+        # print("Test:", video_path)
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError(f"failed to open {video_path}")
+        frames = []
+        frame_count = 0
+        fps_interval = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / (max_frames-1) ))
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            if frame_count % fps_interval == 0:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_image = Image.fromarray(rgb_frame)
+                resized_img = pil_image.resize(target_size, Image.BICUBIC)
+                frames.append(resized_img)
+
+            frame_count += 1
+            if len(frames) >= max_frames:
+                break
+
+        cap.release()
+        # print(frames)
+        return frames
+
+
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
         if isinstance(i, int):
@@ -339,8 +370,20 @@ class LazySupervisedDataset(Dataset):
         if 'image' in sources[0]:
             image_file = self.list_data_dict[i]['image']
             image_folder = self.data_args.image_folder
-            processor = self.data_args.image_processor
-            image = processor(os.path.join(image_folder, image_file), return_tensors='pt')['pixel_values']
+            processor = self.data_args.image_processor.video_processor
+            if "qwen2vl" in str(type(processor)).lower():
+                processor = self.data_args.image_processor.video_processor
+                image_list = self._get_video_frames_(os.path.join(image_folder, image_file))
+
+                image_full = processor(videos = image_list)
+                # print(image_full)
+                image = image_full['pixel_values_videos']
+                video_grid_thw = image_full['video_grid_thw']
+                # print("##image:", image.shape)
+                # print(processor(videos = image_list)['video_grid_thw'])
+            else:
+                processor = self.data_args.image_processor
+                image = processor(os.path.join(image_folder, image_file), return_tensors='pt')['pixel_values']
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
@@ -353,7 +396,8 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             data_dict = dict(input_ids=data_dict["input_ids"][0],
                              labels=data_dict["labels"][0])
-
+        if "qwen2vl" in str(type(processor)).lower():
+            data_dict['video_grid_thw'] = video_grid_thw
         # image exist in the data
         if 'image' in self.list_data_dict[i]:
             data_dict['image'] = image
@@ -361,6 +405,7 @@ class LazySupervisedDataset(Dataset):
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
             data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+        # print(f"data dict: {data_dict.keys()}")
         return data_dict
 
 
@@ -394,7 +439,13 @@ class DataCollatorForSupervisedDataset(object):
                 batch['images'] = torch.stack(images).squeeze(1) #torch.Size([8, 3, 8, 224, 224])
             else:
                 batch['images'] = images
-
+        # qwen2vl added
+        if 'video_grid_thw' in instances[0]:
+            video_grid_thws = [instance['video_grid_thw'] for instance in instances]
+            if all(x is not None and x.shape == video_grid_thws[0].shape for x in video_grid_thws):
+                batch['video_grid_thw'] = torch.stack(video_grid_thws)
+            else:
+                batch['video_grid_thw'] = video_grid_thws[0]
         return batch
 
 

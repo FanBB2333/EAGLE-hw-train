@@ -16,7 +16,7 @@
 
 import os
 from .clip_encoder import CLIPVisionTower, LanguageBindAudioTower, LanguageBindVideoTower, Qwen2AudioTower
-from .clip_encoder import Qwen2VLTower
+from .clip_encoder import Qwen2VLTower, Qwen2VLVideoTower
 from .clip_encoder import PointBertTower
 # from .languagebind_audio_encoder import LanguageBindAudioTower
 # from .languagebind_video_encoder import LanguageBindVideoTower
@@ -115,7 +115,9 @@ def build_video_tower(vision_tower_cfg, **kwargs):
         if is_absolute_path_exists:
             return LanguageBindVideoTower(video_tower, args=vision_tower_cfg, **kwargs)     
         raise ValueError(f'Unknown vision tower: {video_tower}')
-
+    elif "qwen2-vl" in video_tower.lower():
+        vision_tower_cfg.freeze_vision = False
+        return Qwen2VLVideoTower(video_tower, args=vision_tower_cfg, **kwargs)
     else:
         raise NotImplementedError
 # END qbs

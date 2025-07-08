@@ -94,10 +94,13 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
         image_grid_thw: Optional[torch.FloatTensor] = None,
+        video_grid_thw: Optional[torch.FloatTensor] = None,
         **kwargs # for llama3, upgrade the transformers and will receive an additional argument cache_position
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         # print(f"Forward images shape: {images.shape if images is not None else None}, input_ids shape: {input_ids.shape if input_ids is not None else None}")
-        if inputs_embeds is None:
+        # print(input_ids.shape if input_ids is not None else "input_ids is None")
+        # print(inputs_embeds.shape if inputs_embeds is not None else "inputs_embeds is None")
+        if inputs_embeds is None and images is not None:
             # BEGIN 
             if self.modal == 'image':
             # END
@@ -176,6 +179,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
             #         videos=pixel_values
             #     )
             elif self.modal == 'video':
+                # print(f"[eagle_llama.py] video_grid_thw shape: {video_grid_thw.shape}")
                 (
                     input_ids,
                     position_ids,
@@ -195,6 +199,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
                     # pixel_values,
                     self.modal,
                     image_sizes,
+                    video_grid_thw=video_grid_thw
                 )
             # END qbs
             # BEGIN hhz
