@@ -19,8 +19,8 @@ cp -r  train_image.py ./checkpoints/$NAME
 # TORCH_DISTRIBUTED_DEBUG='DETAIL' CUDA_VISIBLE_DEVICES='0' 
 # /home1/hxl/disk/EAGLE/qbs/Eagle_LanguageBind/
     # --data_path ./dataset/Images/Eagle-1.8M/eagle-1509586.json \
-CUDA_VISIBLE_DEVICES='5,6,7' python -m torch.distributed.run \
-    --nproc_per_node 3 --master_port 25050 \
+CUDA_VISIBLE_DEVICES='4,5,6,7' python -m torch.distributed.run \
+    --nproc_per_node 4 --master_port 25050 \
     train_image.py \
     --model_name_or_path ./model/LLM/Llama-3.2-1B-Instruct \
     --version llama3 \
