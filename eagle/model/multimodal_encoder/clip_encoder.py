@@ -2,11 +2,11 @@
 from typing import Optional
 import librosa
 # import objaverse
+import transformers
 import numpy as np
 from packaging import version
 from PIL import Image
 import os
-import transformers
 import torch
 import torch.nn as nn
 from transformers import (
@@ -14,9 +14,15 @@ from transformers import (
     Qwen2VLModel,
     # Qwen2VisionTransformerPretrainedModel,
     # Qwen2_5_VLForConditionalGeneration,
+    # Qwen2_5_VLModel
 )
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLModel, Qwen2_5_VLProcessor
+except ImportError:
+    print("Qwen2_5_VLForConditionalGeneration and Qwen2_5_VLModel are not available in this transformers version.")
+
 from transformers import AutoTokenizer, AutoProcessor, Qwen2VLImageProcessor, Trainer
-from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig
+from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, AutoModel
 from transformers import Qwen2AudioForConditionalGeneration, AutoProcessor, Qwen2AudioConfig
 from eagle.model.multimodal_encoder.languagebind import LanguageBindAudio, LanguageBindAudioTokenizer, LanguageBindAudioProcessor
 from eagle.model.multimodal_encoder.languagebind import LanguageBindVideo, LanguageBindVideoTokenizer, LanguageBindVideoProcessor
@@ -287,6 +293,33 @@ class LanguageBindAudioTower(nn.Module):
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
 
+class FixedTokenQwen2VLImageProcessor(Qwen2VLImageProcessor):
+    def __init__(self, *args, fixed_patch_size=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fixed_patch_size = fixed_patch_size  # 例如 (14, 14) 表示固定14x14个patches
+
+    def preprocess(self, images, **kwargs):
+        if self.fixed_patch_size:
+            # 强制调整所有图像到固定尺寸
+            if not isinstance(images, list):
+                images = [images]
+
+            # 计算目标尺寸以产生固定数量的patches
+            target_height = self.fixed_patch_size[0] * self.patch_size
+            target_width = self.fixed_patch_size[1] * self.patch_size
+
+            processed_images = []
+            for image in images:
+                if isinstance(image, str):
+                    image = Image.open(image)
+                # 强制resize到目标尺寸
+                image = image.resize((target_width, target_height))
+                processed_images.append(image)
+
+            return super().preprocess(processed_images, **kwargs)
+        else:
+            return super().preprocess(images, **kwargs)
+
 
 class Qwen2VLVideoTower(nn.Module):
     def __init__(self, vision_tower, args, modality='video', delay_load=False):
@@ -317,7 +350,7 @@ class Qwen2VLVideoTower(nn.Module):
         # self.image_processor = Qwen2VLImageProcessor.from_pretrained(self.vision_tower_name)
         self.image_processor = AutoProcessor.from_pretrained(
             self.vision_tower_name, 
-            fixed_patch_size=(14, 14)
+            # fixed_patch_size=(14, 14)
         )
         self.processor = AutoProcessor.from_pretrained(self.vision_tower_name)
         self.visual = model.visual
@@ -339,12 +372,25 @@ class Qwen2VLVideoTower(nn.Module):
         # video_grid_thw = None
         if video_grid_thw is None:
             video_grid_thw = torch.tensor([[4, 24, 42]] * pixel_values_videos.shape[0])
-        if pixel_values_videos.dim() == 3:
-            frame_embed_list = []
-            b, n, d = pixel_values_videos.shape
-            for i in range(0, b):
-                frame_embed_list.append(self.visual(pixel_values_videos[i], grid_thw=video_grid_thw[i]))
-            video_embeds = torch.stack(frame_embed_list, dim=0)
+            video_grid_thw.to(pixel_values_videos.device)
+        if pixel_values_videos.dim() == 2:
+            pixel_values_videos = pixel_values_videos.unsqueeze(0)
+            # video_grid_thw = video_grid_thw.unsqueeze(0)
+        try:
+            if pixel_values_videos.dim() == 3:
+                frame_embed_list = []
+                b, n, d = pixel_values_videos.shape
+                for i in range(0, b):
+                    frame_embed_list.append(self.visual(pixel_values_videos[i].unsqueeze(0), grid_thw=video_grid_thw[i].unsqueeze(0)))
+                video_embeds = torch.stack(frame_embed_list, dim=0)
+        except Exception as e:
+            if pixel_values_videos.dim() == 3:
+                frame_embed_list = []
+                b, n, d = pixel_values_videos.shape
+                for i in range(0, b):
+                    frame_embed_list.append(self.visual(pixel_values_videos[i], grid_thw=video_grid_thw[i]))
+                    # frame_embed_list.append(self.visual(pixel_values_videos[i].unsqueeze(0), grid_thw=video_grid_thw[i].unsqueeze(0)))
+                video_embeds = torch.stack(frame_embed_list, dim=0)
             
         return video_embeds
 
@@ -390,34 +436,6 @@ class Qwen2VLVideoTower(nn.Module):
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
 
-
-
-class FixedTokenQwen2VLImageProcessor(Qwen2VLImageProcessor):
-    def __init__(self, *args, fixed_patch_size=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fixed_patch_size = fixed_patch_size  # 例如 (14, 14) 表示固定14x14个patches
-
-    def preprocess(self, images, **kwargs):
-        if self.fixed_patch_size:
-            # 强制调整所有图像到固定尺寸
-            if not isinstance(images, list):
-                images = [images]
-
-            # 计算目标尺寸以产生固定数量的patches
-            target_height = self.fixed_patch_size[0] * self.patch_size
-            target_width = self.fixed_patch_size[1] * self.patch_size
-
-            processed_images = []
-            for image in images:
-                if isinstance(image, str):
-                    image = Image.open(image)
-                # 强制resize到目标尺寸
-                image = image.resize((target_width, target_height))
-                processed_images.append(image)
-
-            return super().preprocess(processed_images, **kwargs)
-        else:
-            return super().preprocess(images, **kwargs)
 
 
 class Qwen2VLTower(nn.Module):
@@ -554,7 +572,228 @@ class Qwen2VLTower(nn.Module):
         return (self.config.image_size // self.config.patch_size) ** 2
 
 
+class FixedTokenQwen25VLImageProcessor(Qwen2VLImageProcessor):
+    def __init__(self, *args, fixed_patch_size=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fixed_patch_size = fixed_patch_size  # 例如 (14, 14) 表示固定14x14个patches
+        # self.patch_size = self.image_processor.patch_size
 
+    def preprocess(self, images, **kwargs):
+        if self.fixed_patch_size:
+            # 强制调整所有图像到固定尺寸
+            if not isinstance(images, list):
+                images = [images]
+
+            # 计算目标尺寸以产生固定数量的patches
+            target_height = self.fixed_patch_size[0] * self.patch_size
+            target_width = self.fixed_patch_size[1] * self.patch_size
+
+            processed_images = []
+            for image in images:
+                if isinstance(image, str):
+                    image = Image.open(image)
+                # 强制resize到目标尺寸
+                image = image.resize((target_width, target_height))
+                processed_images.append(image)
+
+            return super().preprocess(processed_images, **kwargs)
+        else:
+            return super().preprocess(images, **kwargs)
+
+
+class Qwen25VLTower(nn.Module):
+    def __init__(self, vision_tower, args, modality='image', delay_load=False):
+        super().__init__()
+        self.modality = modality
+
+        self.is_loaded = False
+
+        self.vision_tower_name = vision_tower
+        self.select_layer = args.mm_vision_select_layer
+        self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
+
+        self.load_model()
+        print(f"Vision tower {self.vision_tower_name} is loaded.")
+
+    def load_model(self, device_map=None):
+        if self.is_loaded:
+            print('{} is already loaded, `load_model` called again, skipping.'.format(self.vision_tower_name))
+            return
+        target_version = version.parse("4.52.0")
+        current_version = version.parse(transformers.__version__)
+        if current_version >= target_version:
+            model = Qwen2_5_VLModel.from_pretrained(self.vision_tower_name, device_map=device_map)
+        elif current_version >= version.parse("4.51.3"):
+            # older transformers(4.51.3)
+            model = Qwen2_5_VLForConditionalGeneration.from_pretrained(self.vision_tower_name, device_map=device_map)
+        # self.image_processor = Qwen2VLImageProcessor.from_pretrained(self.vision_tower_name)
+        self.image_processor = FixedTokenQwen25VLImageProcessor.from_pretrained(
+            self.vision_tower_name, 
+            fixed_patch_size=(14, 14)
+        )
+        self.processor = AutoProcessor.from_pretrained(self.vision_tower_name)
+        self.visual = model.visual
+        # self.vision_tower.requires_grad_(False)
+        self.is_loaded = True
+
+
+    def get_image_features(self, pixel_values: torch.FloatTensor, image_grid_thw: Optional[torch.LongTensor] = None):
+        # pixel_values = pixel_values.type(self.visual.dtype)
+        # print(f"pixel_values shape: {pixel_values.shape}")
+        if pixel_values.dim() == 3:
+            image_embed_list = []
+            for i in range(pixel_values.shape[0]):
+                image_embed_list.append(
+                    self.visual(pixel_values[i], grid_thw=image_grid_thw[i] if image_grid_thw is not None else None)
+                )
+            image_embeds = torch.stack(image_embed_list, dim=0)
+        elif pixel_values.dim() == 2:
+            image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
+        # add 1 size to the batch dimension if the input is a single image
+        if image_embeds.dim() == 2:
+            image_embeds = image_embeds.unsqueeze(0)
+        return image_embeds
+
+    def forward(self, images: torch.FloatTensor, image_grid_thw: Optional[torch.LongTensor] = None):
+        # print(f"images shape: {images.shape}, image_grid_thw shape: {image_grid_thw.shape if image_grid_thw is not None else None}")
+        with torch.no_grad():
+            if self.modality == 'image':
+                image_features = self.get_image_features(images, image_grid_thw=image_grid_thw)
+            else:
+                raise ValueError(f"Unsupported modality: {self.modality}")
+        return image_features
+
+
+    @property
+    def dummy_feature(self):
+        return torch.zeros(1, self.hidden_size, device=self.device, dtype=self.dtype)
+
+    @property
+    def dtype(self):
+        return next(self.parameters()).dtype
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    @property
+    def config(self):
+        if self.is_loaded:
+            return self.visual.config
+        else:
+            return self.cfg_only
+
+    @property
+    def hidden_size(self):
+        return self.config.hidden_size
+
+    @property
+    def num_patches_per_side(self):
+        return self.config.image_size // self.config.patch_size
+
+    @property
+    def num_patches(self):
+        return (self.config.image_size // self.config.patch_size) ** 2
+
+class InternVL3VisionTower(nn.Module):
+    def __init__(self, vision_tower, args, delay_load=False):
+        super().__init__()
+
+        self.is_loaded = False
+
+        self.vision_tower_name = vision_tower
+        self.select_layer = getattr(args, "mm_vision_select_layer", -1)
+        self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
+
+        if not delay_load:
+            self.load_model()
+        elif getattr(args, 'unfreeze_mm_vision_tower', False):
+            self.load_model()
+        else:
+            self.cfg_only = CLIPVisionConfig.from_pretrained(self.vision_tower_name)
+
+        self.load_model()
+
+    def load_model(self, device_map=None):
+        if self.is_loaded:
+            print(f"{self.vision_tower_name} already loaded, skip.")
+            return
+
+        # ------------------------------------------------------------------
+        # 加载 InternViT-300M-448px-V2_5
+        # ------------------------------------------------------------------
+        self.vision_tower = AutoModel.from_pretrained(
+            self.vision_tower_name,
+            torch_dtype=torch.bfloat16,
+            device_map=device_map,
+            trust_remote_code=True,
+        )
+        # 冻结权重
+        self.vision_tower.requires_grad_(False)
+        self.vision_tower.eval()
+
+        # 配套的 image_processor
+        self.image_processor = CLIPImageProcessor.from_pretrained(
+            self.vision_tower_name
+        )
+
+        # 兼容旧接口，把视觉编码器放到 self.visual 方便外部调用
+        self.visual = self.vision_tower
+        self.is_loaded = True
+        print(f"Vision tower {self.vision_tower_name} is loaded.")
+
+    # ------------------------------------------------------------------
+    # 前向：与 LLaVA / InternVL 其它版本接口保持一致
+    # ------------------------------------------------------------------
+    def forward(self, images):
+        """
+        images: 预处理后的像素张量 [B, 3, 448, 448] (bfloat16)
+        return: 视觉 token [B, L, D] 或 pooled feature [B, D] 取决于 select_feature
+        """
+        with torch.no_grad():
+            outputs = self.vision_tower(images, output_hidden_states=True)
+            hidden_states = outputs.hidden_states[self.select_layer]
+
+            if self.select_feature == "patch":
+                # 去掉 cls token (第 0 个位置)
+                return hidden_states[:, 1:]
+            elif self.select_feature == "cls_patch":
+                return hidden_states  # 保留 cls token
+            else:  # pooled / pooler_output
+                return outputs.pooler_output
+
+    @property
+    def dummy_feature(self):
+        return torch.zeros(1, self.hidden_size, device=self.device, dtype=self.dtype)
+
+    @property
+    def dtype(self):
+        return self.vision_tower.dtype
+
+    @property
+    def device(self):
+        return self.vision_tower.device
+
+    @property
+    def config(self):
+        if self.is_loaded:
+            return self.vision_tower.config
+        else:
+            return self.cfg_only
+
+    @property
+    def hidden_size(self):
+        return self.config.hidden_size
+
+    @property
+    def num_patches_per_side(self):
+        return self.config.image_size // self.config.patch_size
+
+    @property
+    def num_patches(self):
+        return (self.config.image_size // self.config.patch_size) ** 2
+    
+    
 class Qwen2AudioTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
         super().__init__()

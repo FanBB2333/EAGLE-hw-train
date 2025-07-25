@@ -16,7 +16,7 @@
 
 import os
 from .clip_encoder import CLIPVisionTower, LanguageBindAudioTower, LanguageBindVideoTower, Qwen2AudioTower
-from .clip_encoder import Qwen2VLTower, Qwen2VLVideoTower
+from .clip_encoder import Qwen2VLTower, Qwen2VLVideoTower, InternVL3VisionTower
 from .clip_encoder import PointBertTower
 # from .languagebind_audio_encoder import LanguageBindAudioTower
 # from .languagebind_video_encoder import LanguageBindVideoTower
@@ -63,7 +63,14 @@ def build_vision_tower(vision_tower_cfg, **kwargs):
         vision_tower_cfg.freeze_vision = False
         return Qwen2VLTower(vision_tower, args=vision_tower_cfg, **kwargs)
 
-
+    elif "qwen2.5-vl" in vision_tower.lower():
+        vision_tower_cfg.freeze_vision = False
+        return Qwen25VLTower(vision_tower, args=vision_tower_cfg, **kwargs)
+    elif "internvit" in vision_tower.lower():
+        vision_tower_cfg.freeze_vision = False
+        return InternVL3VisionTower(vision_tower, args=vision_tower_cfg, **kwargs)
+    
+    
     raise ValueError(f'Unknown vision tower: {vision_tower}')
 
 # BEGIN
