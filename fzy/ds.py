@@ -674,7 +674,44 @@ class DocVQA(MMDS):
         print(f"Processed DocVQA task 1 dataset, saved to {output_file}")
         return ret
         
+class ChartQA(MMDS):
+    # huggingface-cli download --repo-type dataset --resume-download HuggingFaceM4/ChartQA --local-dir HuggingFaceM4/ChartQA
+    def __init__(self, db_path = PROJECT_BASE / 'dataset/Images' / 'HuggingFaceM4/ChartQA'):
+        name = 'ChartQA'
+        super().__init__(name)
+        self.db_path = db_path
+        self.data = list()
+        # load data using
+        self.raw_data = load_dataset(str(db_path), split="train")
+    
+    def reformat(self):
+        # load the json file
+        ret = list()
+        print(f"Total {len(self.raw_data)} samples in ChartQA dataset")
+        for idx, item in enumerate(tqdm(self.raw_data)):
+            image_pil = item['image'].convert("RGB")  # Convert to RGB if needed
+            image_path = self.db_path / "images" / f"chartqa_{idx}.jpg"
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            if not image_path.exists():
+                image_pil.save(image_path)
+            question = f"{item['query']}\n<image>"
+            answer = item['label'][0]
+            ds_item = sample_format_lambda(
+                question=question,
+                answer=answer,
+                image_path=str(image_path),
+                id=idx,
+                path_prefix="images" 
+            )
+            ret.append(ds_item)
+        # save to json file
+        output_file = self.db_path / "chartqa.json"
+        with open(output_file, 'w') as f:
+            json.dump(ret, f, indent=4)
+        print(f"Processed ChartQA dataset, saved to {output_file}")
+        return ret
         
+
 
 class Cambrian(MMDS):
     # path /home1/hxl/disk/EAGLE/qbs/Eagle_LanguageBind/dataset/Images/Cambrian-10M/Cambrian7M_withsystemprompt.jsonl
@@ -842,5 +879,9 @@ if __name__ == "__main__":
     # textvqa = TextVQA()
     # textvqa.offload_train()
     
-    docvqa = DocVQA()
-    docvqa.reformat()
+    # docvqa = DocVQA()
+    # docvqa.reformat()
+    
+    chartqa = ChartQA()
+    print(chartqa.raw_data[0])
+    chartqa.reformat()
