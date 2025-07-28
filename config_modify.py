@@ -25,5 +25,6 @@ def update_config_files(folder_path):
                     print(f'无法处理文件 {file_path}: {e}')
 
 # 使用示例：替换为您要检查的文件夹路径
-folder_to_check = '/home6/fzy/repos/EAGLE/checkpoints/llama_3.2b/Video'
+# folder_to_check = '/home6/fzy/repos/EAGLE/checkpoints/llama_3.2b/Video'
+folder_to_check = '/home6/fzy/repos/EAGLE/checkpoints/finetune-video-llama3.2-3b-fzy-added-4'
 update_config_files(folder_to_check)

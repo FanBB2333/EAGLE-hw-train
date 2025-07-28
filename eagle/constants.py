@@ -13,9 +13,4 @@ DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
 DEFAULT_IM_START_TOKEN = "<im_start>"
 DEFAULT_IM_END_TOKEN = "<im_end>"
 IMAGE_PLACEHOLDER = "<image-placeholder>"
-
-# BEGIN
-
-DEFAULT_AUDIO_TOKEN = "<audio>"
-
-# END
+COORD_TOKEN_3D_VIDEO = "<coord>"

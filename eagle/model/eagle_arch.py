@@ -37,13 +37,17 @@ import torch.nn as nn
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector
 
-from eagle.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from eagle.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, COORD_TOKEN_3D_VIDEO
 
 from eagle.mm_utils import get_anyres_image_grid_shape
 # BEGIN
 from .multimodal_encoder.builder import build_audio_tower
 from .multimodal_projector.builder import build_audio_projector
-
+from .multimodal_encoder.builder import build_video_tower
+from .multimodal_projector.builder import build_video_projector
+from .multimodal_encoder.builder import build_3d_tower
+from .multimodal_projector.builder import build_3d_projector
+from .multimodal_encoder.processing_3d_video import Video3DProcessor
 import logging
 # END
 
@@ -53,6 +57,37 @@ class EagleMetaModel:
         super(EagleMetaModel, self).__init__(config)
 
         if hasattr(config, "mm_vision_tower"):
+            # BEGIN hxl
+            # process for load pretrain
+            # if 'video' in config.mm_vision_tower.lower() or hasattr(config, "mm_video_tower"):
+            # if 'video' in config.mm_vision_tower.lower() or True:
+            if 'video' in config.mm_vision_tower.lower() :
+                self.vision_tower = build_video_tower(config)
+                if not hasattr(config, 'mm_video_hidden_size'):
+                    config.mm_video_hidden_size = config.mm_hidden_size
+                # self.mm_video_projector = build_video_projector(config)
+                # self.mm_projector = self.mm_video_projector
+                fpn_input_dim = [] if not hasattr(self.vision_tower, "fpn_input_dim") else self.vision_tower.fpn_input_dim
+                self.mm_projector = build_vision_projector(self.config, fpn_input_dim=fpn_input_dim)
+                # BEGIN hhz: 适配Video-3D-LLM
+                if hasattr(config, 'world_position_embedding_type'):
+                    self.build_world_position_embedding(config)
+                    if "qwen25vl" not in str(type(self.vision_tower)).lower():
+                        self.vision_tower.image_processor = Video3DProcessor(self.vision_tower.config)
+                # END hhz
+                return
+
+            # END hxl
+
+            # BEGIN hhz
+            if 'point' in config.mm_vision_tower.lower():
+                self.vision_tower = build_3d_tower(config)
+                if not hasattr(config, 'mm_hidden_size'):
+                    config.mm_hidden_size = config.vision_tower.config.hidden_size
+                self.mm_projector = build_3d_projector(config)
+                return
+            # END hhz
+
             self.vision_tower = build_vision_tower(config, delay_load=True)
             fpn_input_dim = [] if not hasattr(self.vision_tower, "fpn_input_dim") else self.vision_tower.fpn_input_dim
             self.mm_projector = build_vision_projector(config, fpn_input_dim=fpn_input_dim)
@@ -61,12 +96,30 @@ class EagleMetaModel:
                 self.image_newline = nn.Parameter(
                     torch.empty(config.hidden_size, dtype=self.dtype)
                 )
-
         # BEGIN
         if hasattr(config, "mm_audio_tower"):
-            self.audio_tower = build_audio_tower(config, delay_load=True)
+            self.audio_tower = build_audio_tower(config)
             self.mm_audio_projector = build_audio_projector(config)
         # END
+
+    # hhz: 适配Video-3D-LLM
+    def build_world_position_embedding(self, config):
+        from .position_encoding import PositionEmbeddingSine3D, PositionEmbeddingMLP
+
+        world_position_embedding_type = getattr(config, 'world_position_embedding_type', "avg-discrete-sin3d")
+        if "sample9" in world_position_embedding_type:
+            n_points = 9
+        elif "sample5" in world_position_embedding_type:
+            n_points = 5
+        elif "minmax" in world_position_embedding_type:
+            n_points = 2
+        else:
+            n_points = 1
+    
+        if "mlp" in world_position_embedding_type:
+            self.world_position_embedding = PositionEmbeddingMLP(config.hidden_size, n_points=n_points)
+        elif "sin3d" in world_position_embedding_type:
+            self.world_position_embedding = PositionEmbeddingSine3D(config.hidden_size, n_points=n_points)
 
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
@@ -74,7 +127,7 @@ class EagleMetaModel:
             vision_tower = vision_tower[0]
         return vision_tower
 
-    def initialize_vision_modules(self, model_args, fsdp=None):
+    def initialize_vision_modules(self, model_args, fsdp=None, modality='image'):
         vision_tower = model_args.vision_tower
         mm_vision_select_layer = model_args.mm_vision_select_layer
         mm_vision_select_feature = model_args.mm_vision_select_feature
@@ -84,7 +137,18 @@ class EagleMetaModel:
         self.config.mm_vision_tower = vision_tower
 
         if self.get_vision_tower() is None:
-            vision_tower = build_vision_tower(model_args)
+            if modality == 'image':
+                vision_tower = build_vision_tower(model_args)
+            elif modality == 'video':
+                vision_tower = build_video_tower(model_args)
+            elif modality == 'audio':
+                vision_tower = build_audio_tower(model_args)
+            elif modality == '3d':
+                vision_tower = build_3d_tower(model_args)
+            elif modality == '3d_video':
+                vision_tower = build_video_tower(model_args)
+                if "qwen25vl" not in str(type(self.vision_tower)).lower():
+                    vision_tower.image_processor = Video3DProcessor(vision_tower.config)
 
             if fsdp is not None and len(fsdp) > 0:
                 self.vision_tower = [vision_tower]
@@ -99,11 +163,39 @@ class EagleMetaModel:
 
         self.config.use_mm_proj = True
         self.config.mm_projector_type = getattr(model_args, 'mm_projector_type', 'linear')
-        self.config.mm_hidden_size = vision_tower.hidden_size
+        
+        if modality == '3d':
+            self.config.mm_hidden_size = getattr(vision_tower.config, 'trans_dim', None)
+        else:
+            self.config.mm_hidden_size = getattr(vision_tower.config, 'hidden_size', None)
+            if self.config.mm_hidden_size is None:
+                self.config.mm_hidden_size = getattr(vision_tower.config, 'd_model', None)
+            if self.config.mm_hidden_size is None:
+                vision_tower.config.get('hidden_dim', None)
+        if "qwen25vl" in str(type(vision_tower)).lower():
+            self.config.mm_hidden_size = getattr(vision_tower.config, 'out_hidden_size', None)
+        # hhz: 适配Video-3D-LLM
+        if modality == '3d_video':
+            if not hasattr(self.config, 'min_xyz_range'):
+                setattr(self.config, 'min_xyz_range', [-15, -15, -5])
+            if not hasattr(self.config, 'max_xyz_range'):
+                setattr(self.config, 'max_xyz_range', [15, 15, 5])
+            if not hasattr(self.config, 'voxel_size'):
+                setattr(self.config, 'voxel_size', 0.1)
+            if not hasattr(self.config, 'world_position_embedding_type'):
+                setattr(self.config, 'world_position_embedding_type', "avg-discrete-sin3d")
+            self.build_world_position_embedding(self.config)
+        
+        # else:
+        #     # try:
+        #     #     self.config.mm_hidden_size = vision_tower.config.hidden_size
+        #     # except:
+        #     #     self.config.mm_hidden_size = vision_tower.config['hidden_dim']
+        #     self.config.mm_hidden_size = vision_tower.hidden_size
         self.config.mm_vision_select_layer = mm_vision_select_layer
         self.config.mm_vision_select_feature = mm_vision_select_feature
         self.config.mm_patch_merge_type = mm_patch_merge_type
-
+        
         # Copied from CuMo
         self.config.num_experts = model_args.num_experts
         self.config.num_selected = model_args.num_selected
@@ -126,16 +218,17 @@ class EagleMetaModel:
             for p in self.mm_projector.parameters():
                 p.requires_grad = True
 
-        if pretrain_mm_mlp_adapter is not None:
+        if pretrain_mm_mlp_adapter is not None and not model_args.evaluation:
             mm_projector_weights = torch.load(pretrain_mm_mlp_adapter, map_location='cpu')
             def get_w(weights, keyword):
                 return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
 
             # Copied from CuMo
-            if getattr(self.config, 'mlp_smoe', False):
+            if self.config.mlp_smoe:
                 for i in range(model_args.num_experts):
                     self.mm_projector.experts[i].load_state_dict(get_w(mm_projector_weights, 'mm_projector'))
             else:
+                print(f"Loading mm_projector weights from {pretrain_mm_mlp_adapter}")
                 self.mm_projector.load_state_dict(get_w(mm_projector_weights, 'mm_projector'))
 
     # BEGIN
@@ -169,7 +262,7 @@ class EagleMetaModel:
 
         self.config.use_mm_audio_proj = True
         self.config.mm_audio_projector_type = getattr(model_args, 'mm_audio_projector_type', 'linear')
-        self.config.mm_audio_hidden_size = audio_tower.vision_embed_dim
+        self.config.mm_audio_hidden_size = audio_tower.config.hidden_size
         self.config.mm_audio_select_layer = mm_audio_select_layer
         self.config.mm_audio_select_feature = mm_audio_select_feature
 
@@ -192,6 +285,61 @@ class EagleMetaModel:
             self.mm_audio_projector.load_state_dict(get_w(mm_audio_projector_weights, 'mm_audio_projector'))
 
 
+
+    # END
+
+    # BEGIN qbs
+    def get_video_tower(self):
+        video_tower = getattr(self, 'video_tower', None)
+        if type(video_tower) is list:
+            video_tower = video_tower[0]
+        return video_tower
+
+
+    def initialize_video_modules(self, model_args, fsdp=None):
+        video_tower = model_args.video_tower
+        mm_video_select_layer = model_args.mm_video_select_layer
+        mm_video_select_feature = model_args.mm_video_select_feature
+        pretrain_mm_video_projection = model_args.pretrain_mm_video_projection
+
+        self.config.mm_video_tower = video_tower
+
+        if self.get_video_tower() is None:
+            video_tower = build_video_tower(model_args)
+            
+            if fsdp is not None and len(fsdp) > 0:
+                self.video_tower = [video_tower]
+            else:
+                self.video_tower = video_tower
+        else:
+            if fsdp is not None and len(fsdp) > 0:
+                video_tower = self.video_tower[0]
+            else:
+                video_tower = self.video_tower
+
+        self.config.use_mm_video_proj = True
+        self.config.mm_video_projector_type = getattr(model_args, 'mm_video_projector_type', 'linear')
+        self.config.mm_video_hidden_size = video_tower.config.hidden_size
+        self.config.mm_video_select_layer = mm_video_select_layer
+        self.config.mm_video_select_feature = mm_video_select_feature
+
+        # FUTURE: Add MoE config here
+
+        if getattr(self, 'mm_video_projector', None) is None:
+            self.mm_video_projector = build_video_projector(self.config)
+        else:
+            # In case it is frozen by LoRA
+            for p in self.mm_video_projector.parameters():
+                p.requires_grad = True
+        
+        if pretrain_mm_video_projection is not None:
+            mm_video_projector_weights = torch.load(pretrain_mm_video_projection, map_location='cpu')
+            def get_w(weights, keyword):
+                return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
+            
+            # FUTURE: Adapt MoE here
+
+            self.mm_video_projector.load_state_dict(get_w(mm_video_projector_weights, 'mm_video_projector'))
 
     # END
 
@@ -236,40 +384,75 @@ class EagleMetaForCausalLM(ABC):
     def get_vision_tower(self):
         return self.get_model().get_vision_tower()
 
-    def encode_images(self, images):
-        image_features = self.get_model().get_vision_tower()(images)
-
+    def encode_images(self, images, image_grid_thw=None):
+        # print(f"Encoding images with shape: {images.shape}") # [2,1176] ->torch.Size([2, 3, 224, 224])
+        if "qwen2vl" in str(self.get_model().get_vision_tower()).lower():
+            image_features = self.get_model().get_vision_tower()(images, image_grid_thw=image_grid_thw)
+        elif "qwen25vl" in str(self.get_model().get_vision_tower()).lower():
+            image_features = self.get_model().get_vision_tower()(images, image_grid_thw=image_grid_thw)
+        else:
+            image_features = self.get_model().get_vision_tower()(images) # torch.Size([8, 49, 512])
+        # print(f"Image features shape after vision tower: {image_features.shape}") #  ? -> torch.Size([2, 256, 1024])
         # Add moe
-        if getattr(self.config, 'mlp_smoe', False):
+        if self.config.mlp_smoe:
             image_features, mlp_balanced_loss, mlp_router_z_loss = self.get_model().mm_projector(image_features)
             return image_features, mlp_balanced_loss, mlp_router_z_loss
         else:
             image_features = self.get_model().mm_projector(image_features)
             return image_features
 
+    def encode_audios(self, audios):
+        audio_features = self.get_model().get_vision_tower()(audios)
+        # FUTURE adapt projection MoE here
+        audio_features = self.get_model().mm_projector(audio_features)
+        return audio_features
+    
+    def encode_videos(self, videos, video_grid_thw=None):
+        if "qwen2vl" in str(self.get_model().get_vision_tower()).lower():
+            video_features = self.get_model().get_vision_tower()(videos, video_grid_thw=video_grid_thw)
+        else:
+            video_features = self.get_model().get_vision_tower()(videos) # torch.Size([2, 8, 1024])
+        # FUTURE adapt projection MoE here
+        video_features = self.get_model().mm_projector(video_features)
+        return video_features
+
+    def encode_3d(self, point_clouds):
+        pc_features = self.get_model().get_vision_tower()(point_clouds)
+        # FUTURE adapt projection MoE here
+        pc_features = self.get_model().mm_projector(pc_features)
+        return pc_features
+
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
-        images, image_sizes=None, modality='image'
+        images, modality, image_sizes=None, image_grid_thw=None, video_grid_thw=None
     ):
         # MoE loss always return, default none
         mlp_balanced_loss = None
         mlp_router_z_loss = None
         
         vision_tower = self.get_vision_tower()
+        logging.info(str(vision_tower))
+        try:
+            logging.info(str(images.shape))
+            logging.info(str(input_ids.shape))
+        except Exception as e:
+            print(e)
+            print(images)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
-            return input_ids, position_ids, attention_mask, past_key_values, None, labels, None, None
-        
-        # Add modality condition, mod by hxl
-        if (type(images) is list or images.ndim == 5) and modality=='image':
+            logging.info("Unknown happens here in prepare_inputs_labels_vision")
+            logging.info(str(vision_tower))
+            logging.info(str(images.shape))
+            logging.info(str(input_ids.shape))
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+        # print(f"prepare_inputs_labels_for_multimodal images shape: {images.shape}, modality: {modality}") # [2,1176] ->torch.Size([2, 3, 224, 224])
+        if type(images) is list or images.ndim == 5 and modality == 'image':
+            assert RuntimeError
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
 
             # Adapted from CuMo, reason unclear
-            if getattr(self.config, 'mlp_smoe', False):
-                image_features, mlp_balanced_loss, mlp_router_z_loss = self.encode_images(concat_images)
-            else:
-                image_features = self.encode_images(concat_images)
+            image_features, mlp_balanced_loss, mlp_router_z_loss = self.encode_images(concat_images)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')
@@ -314,10 +497,17 @@ class EagleMetaForCausalLM(ABC):
             else:
                 raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            if getattr(self.config, 'mlp_smoe', False):
-                image_features, mlp_balanced_loss, mlp_router_z_loss = self.encode_images(images)
-            else:
-                image_features = self.encode_images(images)
+            if modality == 'image':
+                if self.config.mlp_smoe:
+                    image_features, mlp_balanced_loss, mlp_router_z_loss = self.encode_images(images)
+                else:
+                    image_features = self.encode_images(images, image_grid_thw) # torch.Size([8, 3, 224, 224]) -> torch.Size([8, 49, 2048])
+            elif modality == 'video':
+                image_features = self.encode_videos(images, video_grid_thw)
+            elif modality == 'audio':
+                image_features = self.encode_audios(images)
+            elif modality == '3d':
+                image_features = self.encode_3d(images)
 
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
@@ -381,6 +571,8 @@ class EagleMetaForCausalLM(ABC):
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
 
             cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
+            # for x in cur_new_input_embeds:
+            #     print(x.shape)
 
             cur_new_input_embeds = torch.cat(cur_new_input_embeds)
             cur_new_labels = torch.cat(cur_new_labels)
@@ -442,6 +634,434 @@ class EagleMetaForCausalLM(ABC):
         # Add moe loss
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, mlp_balanced_loss, mlp_router_z_loss
 
+    # BEGIN HHZ：适配Video-3D-LLM
+    def average_coordinate_in_patch(self, world_coords, patch_size=14):
+
+        V, H, W, D = world_coords.size() # D = 3
+
+        world_coords = world_coords.view(V, H, W, D)  # [32, 224, 224, 3]
+        world_coords = world_coords.permute(0, 3, 1, 2)   # [V, D, 224, 224]
+        world_coords_avg = torch.nn.functional.avg_pool2d(world_coords, kernel_size=patch_size, stride=patch_size)  # [32, 3, 16,  16]
+        patch_num = world_coords_avg.shape[-1]
+        world_coords_avg = world_coords_avg.permute(0, 2, 3, 1)     # [32, 16, 16, 3]
+
+        return world_coords_avg
+
+    def minmax_coordinate_in_patch(self, world_coords, patch_size=14):
+
+        V, H, W, D = world_coords.size() # D = 3
+
+        world_coords = world_coords.view(V, H, W, D)    # [32, 224, 224, 3]
+        world_coords = world_coords.permute(0, 3, 1, 2)   # [V, D, 224, 224]
+
+        world_coords_max = torch.nn.functional.max_pool2d(world_coords, kernel_size=patch_size, stride=patch_size)  # [32, 3, 16,  16]
+        world_coords_max = world_coords_max.permute(0, 2, 3, 1)     # [32, 16, 16, 3]
+
+        world_coords_min = - torch.nn.functional.max_pool2d(-world_coords, kernel_size=patch_size, stride=patch_size)  # [32, 3, 16,  16]
+        world_coords_min = world_coords_min.permute(0, 2, 3, 1)     # [32, 16, 16, 3]
+        world_coords = torch.stack([world_coords_min, world_coords_max], dim=3) # [32, 16, 16, 2, 3]
+
+        return world_coords
+    
+    def sample_n_points(self, world_coords, n_points=9):
+
+        V, H, W, D = world_coords.size() # D = 3
+        world_coords = world_coords.view(V, H, W, D)
+        world_coords = world_coords.view(-1, 16, 14, 16, 14, 3).permute(0, 1, 3, 2, 4, 5)
+        if n_points == 9:
+            world_coords_sample = world_coords[:, :, :, 4::9, 4::9, :].reshape(V, 16, 16, 9, 3)
+        elif n_points == 5:
+            world_coords_sample = world_coords[:, :, :, 4::9, 4::9, :].reshape(V, 16, 16, 9, 3)
+            world_coords_sample = world_coords_sample[:, :, :, 0::2, :].reshape(V, 16, 16, 5, 3)
+        elif n_points == 1:
+            world_coords_sample = world_coords[:, :, :, 4::9, 4::9, :].reshape(V, 16, 16, 9, 3)
+            world_coords_sample = world_coords_sample[:, :, :, 4, :].reshape(V, 16, 16, 3)
+        else:
+            raise NotImplementedError
+        
+        return world_coords_sample
+
+    def discrete_coords(self, world_coords, xyz_min):
+
+        # V, H, W, D = world_coords.size() # D = 3
+        # world_coords_discrete = (world_coords.view(-1, 3) - xyz_min.view(1, 3)) / self.config.voxel_size
+
+        min_xyz_range = torch.tensor(self.config.min_xyz_range).to(world_coords.device)
+        max_xyz_range = torch.tensor(self.config.max_xyz_range).to(world_coords.device)
+
+        world_coords = torch.maximum(world_coords, min_xyz_range)
+        world_coords = torch.minimum(world_coords, max_xyz_range)
+        world_coords_discrete = (world_coords - min_xyz_range) / self.config.voxel_size
+        world_coords_discrete = world_coords_discrete.round()
+
+        return world_coords_discrete.detach()
+
+    def prepare_inputs_labels_3d_video(
+        self, input_ids, position_ids, attention_mask, past_key_values, labels,
+        images, video_dict, modality, image_sizes=None, image_grid_thw=None, video_grid_thw=None, use_object_proposals=False,
+    ):
+        # MoE loss always return, default none
+        mlp_balanced_loss = None
+        mlp_router_z_loss = None
+        
+        vision_tower = self.get_vision_tower()
+        logging.info(str(vision_tower))
+        if vision_tower is None or images is None or input_ids.shape[1] == 1:
+            logging.info("Unknown happens here in prepare_inputs_labels_vision")
+            logging.info(str(vision_tower))
+            # logging.info(str(images.shape))
+            # logging.info(str(input_ids.shape))
+            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+        
+        # 读取所有物体bbox并找到视频对应patch
+        object_boxes = None
+        if use_object_proposals:
+            object_boxes = video_dict["objects"][0]
+            object_boxes_center = object_boxes[:, :3]
+            object_features = []
+            obj_num = len(object_boxes)
+
+            object_patch = []
+            # ignore the batch dimension here
+            world_coords = video_dict["world_coords"][0]
+
+            for l in range(obj_num):
+                box = object_boxes[l]
+                min_xyz = box[:3] - box[3:] / 2
+                max_xyz = box[:3] + box[3:] / 2
+                
+                # if "patch27" in self.config.object_feature_type:
+                #     world_coords_new = world_coords[:, :378, :378, :].reshape(-1, 14, 27, 14, 27, 3).transpose(2, 3).flatten(3, 4)  # [32, 14, 14, 27*27, 3]
+                #     cur_object_patch = torch.all((min_xyz <= world_coords_new) & (world_coords_new <= max_xyz), dim=-1)     # [32, 14, 14, 27*27]
+                #     cur_object_patch = cur_object_patch.sum(dim=3) >= int(27 * 27 * 0.25)
+                #     object_patch.append(cur_object_patch)
+                # elif "patch14" in self.config.object_feature_type:
+                #     world_coords_new = world_coords[:, :378, :378, :].reshape(-1, 27, 14, 27, 14, 3).transpose(2, 3).flatten(3, 4)  # [32, 14, 14, 27*27, 3]
+                #     cur_object_patch = torch.all((min_xyz <= world_coords_new) & (world_coords_new <= max_xyz), dim=-1)     # [32, 14, 14, 27*27]
+                #     cur_object_patch = cur_object_patch.sum(dim=3) >= int(14 * 14 * 0.5)
+                #     object_patch.append(cur_object_patch)
+                # else:
+                #     raise NotImplementedError
+                world_coords_new = world_coords[:, :224, :224, :].reshape(-1, 16, 14, 16, 14, 3).transpose(2, 3).flatten(3, 4)  # [32, 16, 16, 14*14, 3]
+                cur_object_patch = torch.all((min_xyz <= world_coords_new) & (world_coords_new <= max_xyz), dim=-1)     # [32, 16, 16, 14*14]
+                cur_object_patch = cur_object_patch.sum(dim=3) >= int(14 * 14 * 0.5)
+                object_patch.append(cur_object_patch)
+
+        # 3d位置编码准备
+        use_mrope_position_embedding = False
+        use_sin3d_pe = False
+        use_mlp_pe = False
+        if hasattr(self.config, 'world_position_embedding_type') and past_key_values is None:
+            B = input_ids.shape[0]
+            world_coords = video_dict['world_coords']
+            xyz_min = world_coords.view(B, -1, 3).min(dim=1)[0]
+
+            if len(video_dict['box_input']):
+                box_input = video_dict['box_input']     # [N, 3]
+            else:
+                box_input = None
+
+            n_points = 1
+            if 'avg' in self.config.world_position_embedding_type:
+                world_coords = [self.average_coordinate_in_patch(coords) for coords in world_coords]
+            elif "sample9" in self.config.world_position_embedding_type:
+                world_coords = [self.sample_n_points(coords, n_points=9) for coords in world_coords]
+                n_points = 9
+            elif "sample5" in self.config.world_position_embedding_type:
+                world_coords = [self.sample_n_points(coords, n_points=5) for coords in world_coords]
+                n_points = 5
+            elif "sample1" in self.config.world_position_embedding_type:
+                world_coords = [self.sample_n_points(coords, n_points=1) for coords in world_coords]
+            elif "minmax" in self.config.world_position_embedding_type:
+                world_coords = [self.minmax_coordinate_in_patch(coords) for coords in world_coords]
+                n_points = 2
+
+            if n_points > 1:
+                if box_input is not None:
+                    raise NotImplementedError("assume each sample may have multiple boxes, box_input should not be used with n_points > 1")
+                    box_input = box_input[:, None, :].repeat(1, n_points, 1)
+                if object_boxes is not None:
+                    object_boxes_center = object_boxes_center[:, None, :].repeat(1, n_points, 1)
+
+            if 'discrete' in self.config.world_position_embedding_type or use_mrope_position_embedding:
+                world_coords_discrete = [self.discrete_coords(coords, xyz_min[i]) for i, coords in enumerate(world_coords)]
+                if box_input is not None:
+                    box_input = self.discrete_coords(box_input, None)
+                if object_boxes is not None:
+                    object_boxes_center = self.discrete_coords(object_boxes_center, None)
+
+            if 'mrope' in self.config.world_position_embedding_type:
+                use_mrope_position_embedding = True
+            
+            if "sin3d" in self.config.world_position_embedding_type:
+                use_sin3d_pe = True
+            
+            if "mlp" in self.config.world_position_embedding_type:
+                use_mlp_pe = True
+        
+        # 调用原始视频编码器
+        if not isinstance(images, torch.Tensor):
+            raise ValueError(f"Expected images to be a Tensor, got {type(images)}")
+        image_features = self.encode_videos(images, video_grid_thw)
+
+        mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")
+        mm_newline_position = getattr(self.config, "mm_newline_position", "one_token")
+        
+        # 取bbox对应视频patch特征并加上bbox位置编码
+        if use_object_proposals:
+            object_features = []
+            valid_obj_num = 0
+            for l in range(obj_num):
+                # print(f"image_featurs: {image_features[0].shape}")
+                # print(f"object_patch: {object_patch[l].shape}")
+                # if "patch27" in self.config.object_feature_type:
+                #     cur_object_features = image_features[0][object_patch[l].view(-1, 196)]
+                # elif "patch14" in self.config.object_feature_type:
+                #     cur_object_features = encoded_image_features[0][object_patch[l].view(-1, 729)]
+                # else:
+                #     raise NotImplementedError
+                cur_object_features = image_features[0][object_patch[l].view(-1, 256)]
+                
+                if len(cur_object_features) == 0:
+                    cur_object_features = torch.zeros(image_features[0].shape[-1]).to(image_features[0].device)
+                else:
+                    cur_object_features = cur_object_features.mean(dim=0)
+                    valid_obj_num += 1
+                object_features.append(cur_object_features)
+            object_features = torch.stack(object_features)
+            if use_mlp_pe or use_sin3d_pe:
+                box_center_features = self.get_model().world_position_embedding(object_boxes_center.unsqueeze(0)).squeeze(0)      
+                object_features += box_center_features
+        else:
+            object_features =  None
+        
+        # 视频特征加上3d位置编码
+        if use_sin3d_pe or use_mlp_pe:
+            new_image_features = []
+            for idx, image_feat in enumerate(image_features):
+                if "discrete" in self.config.world_position_embedding_type:
+                    coords = world_coords_discrete[idx].flatten(1, 2)
+                else:
+                    coords = world_coords[idx].flatten(1, 2)
+                    
+                coords_pe = self.get_model().world_position_embedding(coords.detach())
+                coords_pe = coords_pe.reshape(-1, coords_pe.shape[-1])
+                image_feat = image_feat + coords_pe # [8*256, hidden_size]
+                new_image_features.append(image_feat)
+            image_features = new_image_features
+
+        # patch merge处理
+        # if mm_patch_merge_type == "flat":
+        #     image_features = [x.flatten(0, 1) for x in image_features]
+        # elif mm_patch_merge_type.startswith("spatial"):
+        #     # TODO: 暂不使用spatial
+        #     raise NotImplementedError
+        
+        #     new_image_features = []
+        #     for image_idx, image_feature in enumerate(image_features):
+        #         # FIXME: now assume the image is square, and split to 2x2 patches
+        #         # num_patches = h * w, where h = w = sqrt(num_patches)
+        #         # currently image_feature is a tensor of shape (4, num_patches, hidden_size)
+        #         # we want to first unflatten it to (2, 2, h, w, hidden_size)
+        #         # rank0_print("At least we are reaching here")
+        #         # import pdb; pdb.set_trace()
+                
+        #         if mm_newline_position == "grid":
+        #             # Grid-wise
+        #             image_feature = self.add_token_per_grid(image_feature)
+        #             new_image_features.append(image_feature)
+        #         elif mm_newline_position == "frame":
+        #             # Frame-wise
+        #             image_feature = self.add_token_per_frame(image_feature)
+        #             new_image_features.append(image_feature.flatten(0, 1))
+        #         elif mm_newline_position == "one_token":
+        #             # one-token
+        #             image_feature = image_feature.flatten(0, 1)
+        #             if 'unpad' in mm_patch_merge_type:
+        #                 image_feature = torch.cat((
+        #                     image_feature,
+        #                     self.model.image_newline[None].to(image_feature.device)
+        #                 ), dim=0)
+        #             new_image_features.append(image_feature)      
+        #         elif mm_newline_position == "no_token":
+        #             new_image_features.append(image_feature.flatten(0, 1))
+        #         else:
+        #             raise ValueError(f"Unexpected mm_newline_position: {mm_newline_position}")
+        #     image_features = new_image_features
+        # else:
+        #     raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
+
+        # TODO: image start / end is not implemented here to support pretraining.
+        if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
+            raise NotImplementedError
+
+        # Let's just add dummy tensors if they do not exist,
+        # it is a headache to deal with None all the time.
+        # But it is not ideal, and if you have a better idea,
+        # please open an issue / submit a PR, thanks.
+        _labels = labels
+        _position_ids = position_ids
+        _attention_mask = attention_mask
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
+        else:
+            attention_mask = attention_mask.bool()
+        if position_ids is None:
+            position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
+        if labels is None:
+            labels = torch.full_like(input_ids, IGNORE_INDEX)
+
+        # remove the padding using attention_mask -- FIXME
+        _input_ids = input_ids
+        input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
+        labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
+
+        if hasattr(self.config, "coord_token_ids") and (use_sin3d_pe or use_mlp_pe) and box_input is not None:
+            box_input_pe = self.get_model().world_position_embedding(box_input.unsqueeze(0).detach()).squeeze(0)
+
+        new_input_embeds = []
+        new_labels = []
+        new_world_coords = []
+        cur_image_idx = 0
+        cur_box_input_idx = 0
+        for batch_idx, cur_input_ids in enumerate(input_ids):
+            num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
+            if num_images == 0:
+                cur_image_features = image_features[cur_image_idx]
+                cur_input_embeds_1 = self.get_model().embed_tokens(cur_input_ids)
+                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
+                new_input_embeds.append(cur_input_embeds)
+                new_labels.append(labels[batch_idx])
+                cur_image_idx += 1
+                continue
+
+            image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+            cur_input_ids_noim = []
+            cur_labels = labels[batch_idx]
+            cur_labels_noim = []
+            for i in range(len(image_token_indices) - 1):
+                cur_input_ids_noim.append(cur_input_ids[image_token_indices[i]+1:image_token_indices[i+1]])
+                cur_labels_noim.append(cur_labels[image_token_indices[i]+1:image_token_indices[i+1]])
+            split_sizes = [x.shape[0] for x in cur_labels_noim]
+            
+            cat_cur_input_ids_noim = torch.cat(cur_input_ids_noim)
+            cur_input_embeds = self.get_model().embed_tokens(cat_cur_input_ids_noim)
+            
+            # bbox位置编码加到coord token上
+            if hasattr(self.config, "coord_token_ids") and (use_sin3d_pe or use_mlp_pe):
+                query_coord_tokens = (cat_cur_input_ids_noim == self.config.coord_token_ids[0])
+                coord_token_num = query_coord_tokens.sum()
+                if coord_token_num != 0:
+                    cur_input_embeds[query_coord_tokens] += box_input_pe[cur_box_input_idx:cur_box_input_idx + coord_token_num]
+                    cur_box_input_idx += coord_token_num
+            
+            cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
+            cur_new_input_embeds = []
+            cur_new_labels = []
+            cur_new_world_coords = []
+            cur_pos_index = 0
+
+            for i in range(num_images + 1):
+                cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                cur_new_labels.append(cur_labels_noim[i])
+                if use_mrope_position_embedding:
+                    cur_new_world_coords.append(
+                        torch.arange(cur_pos_index, cur_pos_index + len(cur_input_embeds_no_im[i])).to(cur_input_embeds_no_im[i].device).unsqueeze(1).repeat(1, 3)
+                    )
+                    cur_pos_index += len(cur_input_embeds_no_im[i])
+                if i < num_images:
+                    cur_image_features = image_features[cur_image_idx]
+
+                    if use_mrope_position_embedding:
+                        coords = world_coords_discrete[batch_idx]
+                        V, H, W, D = coords.shape
+                        new_coords = torch.zeros(V*H*(W+1), 3).to(cur_input_embeds_no_im[i].device).view(V, H, W+1, 3)
+                        new_coords[:, :, :W, :] = coords
+                        new_coords = new_coords.view(-1, 3)
+                        cur_pos_index += V * H * (W + 1)
+                        cur_new_world_coords.append(new_coords)
+                    
+                    cur_image_idx += 1
+                    cur_new_input_embeds.append(cur_image_features)
+                    cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
+
+            cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
+            # for x in cur_new_input_embeds:
+            #     print(x.shape)
+
+            cur_new_input_embeds = torch.cat(cur_new_input_embeds)
+            cur_new_labels = torch.cat(cur_new_labels)
+
+            new_input_embeds.append(cur_new_input_embeds)
+            new_labels.append(cur_new_labels)
+
+            if use_mrope_position_embedding:
+                cur_new_world_coords = torch.cat(cur_new_world_coords, dim=0)
+                new_world_coords.append(cur_new_world_coords)
+
+        # Truncate sequences to max length as image embeddings can make the sequence longer
+        tokenizer_model_max_length = getattr(self.config, 'tokenizer_model_max_length', None)
+        if tokenizer_model_max_length is not None:
+            new_input_embeds = [x[:tokenizer_model_max_length] for x in new_input_embeds]
+            new_labels = [x[:tokenizer_model_max_length] for x in new_labels]
+
+        # Combine them
+        max_len = max(x.shape[0] for x in new_input_embeds)
+        batch_size = len(new_input_embeds)
+
+        new_input_embeds_padded = []
+        new_labels_padded = torch.full((batch_size, max_len), IGNORE_INDEX, dtype=new_labels[0].dtype, device=new_labels[0].device)
+        attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
+        position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
+        mrope_position_ids = torch.zeros((batch_size, max_len, 3), dtype=position_ids.dtype, device=position_ids.device)
+
+        for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
+            cur_len = cur_new_embed.shape[0]
+            if getattr(self.config, 'tokenizer_padding_side', 'right') == "left":
+                new_input_embeds_padded.append(torch.cat((
+                    torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device),
+                    cur_new_embed
+                ), dim=0))
+                if cur_len > 0:
+                    new_labels_padded[i, -cur_len:] = cur_new_labels
+                    attention_mask[i, -cur_len:] = True
+                    position_ids[i, -cur_len:] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
+                    if use_mrope_position_embedding:
+                        mrope_position_ids[i, -cur_len:, :] = new_world_coords[i][-cur_len:, :]
+            else:
+                new_input_embeds_padded.append(torch.cat((
+                    cur_new_embed,
+                    torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device)
+                ), dim=0))
+                if cur_len > 0:
+                    new_labels_padded[i, :cur_len] = cur_new_labels
+                    attention_mask[i, :cur_len] = True
+                    position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
+                    if use_mrope_position_embedding:
+                        mrope_position_ids[i, :cur_len, :] = new_world_coords[i][:cur_len, :]
+
+        new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
+
+        if _labels is None:
+            new_labels = None
+        else:
+            new_labels = new_labels_padded
+
+        if _attention_mask is None:
+            attention_mask = None
+        else:
+            attention_mask = attention_mask.to(dtype=_attention_mask.dtype)
+
+        if _position_ids is None:
+            position_ids = None
+        
+        if use_mrope_position_embedding:
+            position_ids = mrope_position_ids
+
+        # Add moe loss
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, mlp_balanced_loss, mlp_router_z_loss
+    # END HHZ
+
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:
             tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
@@ -485,9 +1105,14 @@ class EagleMetaForCausalLM(ABC):
                     p.requires_grad = False
                 for p in self.get_output_embeddings().parameters():
                     p.requires_grad = False
+        
+    # hhz: Video-3D-LLM增加<coord> token
+    def initialize_3d_video_tokenizer(self, tokenizer):
+        tokenizer.add_tokens(COORD_TOKEN_3D_VIDEO)
+        self.resize_token_embeddings(len(tokenizer))
+        setattr(self.config, "coord_token_ids", tokenizer.encode(COORD_TOKEN_3D_VIDEO, add_special_tokens=False))
 
     # BEGIN
-
     def get_audio_tower(self):
         return self.get_model().get_audio_tower()
     
@@ -495,11 +1120,11 @@ class EagleMetaForCausalLM(ABC):
         # FUTURE: maybe some tokenizer-operation here.
         pass
 
-    def encode_audios(self, audios):
-        audio_features = self.get_model().get_audio_tower()(pixel_values=audios)[1]
-        # FUTURE adapt projection MoE here
-        audio_features = self.get_model().mm_audio_projector(audio_features)
-        return audio_features
+    # def encode_audios(self, audios):
+    #     audio_features = self.get_model().get_audio_tower()(pixel_values=audios)[1]
+    #     # FUTURE adapt projection MoE here
+    #     audio_features = self.get_model().mm_audio_projector(audio_features)
+    #     return audio_features
 
     def prepare_inputs_labels_audio(
         self,
@@ -514,10 +1139,13 @@ class EagleMetaForCausalLM(ABC):
         mlp_router_z_loss = None
 
         audio_tower = self.get_audio_tower()
-        if audio_tower is None or audios is None or input_ids.shape[1] == 1:
-            logging.info("Unknown happens here in prepare_inputs_labels_audio")
+        # if audio_tower is None or audios is None or input_ids.shape[1] == 1:
+        #     logging.info("Unknown happens here in prepare_inputs_labels_audio")
+        #     logging.info(str(audio_tower))
+        #     logging.info(str(audios.shape))
+        #     logging.info(str(input_ids.shape))
 
-            return input_ids, position_ids, attention_mask, past_key_values, None, labels
+        #     return input_ids, position_ids, attention_mask, past_key_values, None, labels
         
         # IGNORE the case if type(audios) is list or audios.ndim == 5
         # FUTURE adapt projection MoE here
@@ -575,6 +1203,153 @@ class EagleMetaForCausalLM(ABC):
                     cur_audio_idx += 1
                     cur_new_input_embeds.append(cur_audio_features)
                     cur_new_labels.append(torch.full((cur_audio_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
+
+            cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
+
+            cur_new_input_embeds = torch.cat(cur_new_input_embeds)
+            cur_new_labels = torch.cat(cur_new_labels)
+
+            new_input_embeds.append(cur_new_input_embeds)
+            new_labels.append(cur_new_labels)
+
+        # Truncate sequences to max length as image embeddings can make the sequence longer
+        tokenizer_model_max_length = getattr(self.config, 'tokenizer_model_max_length', None)
+        if tokenizer_model_max_length is not None:
+            new_input_embeds = [x[:tokenizer_model_max_length] for x in new_input_embeds]
+            new_labels = [x[:tokenizer_model_max_length] for x in new_labels]
+
+        # Combine them
+        max_len = max(x.shape[0] for x in new_input_embeds)
+        batch_size = len(new_input_embeds)
+
+        new_input_embeds_padded = []
+        new_labels_padded = torch.full((batch_size, max_len), IGNORE_INDEX, dtype=new_labels[0].dtype, device=new_labels[0].device)
+        attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
+        position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
+
+        for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
+            cur_len = cur_new_embed.shape[0]
+            if getattr(self.config, 'tokenizer_padding_side', 'right') == "left":
+                new_input_embeds_padded.append(torch.cat((
+                    torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device),
+                    cur_new_embed
+                ), dim=0))
+                if cur_len > 0:
+                    new_labels_padded[i, -cur_len:] = cur_new_labels
+                    attention_mask[i, -cur_len:] = True
+                    position_ids[i, -cur_len:] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
+            else:
+                new_input_embeds_padded.append(torch.cat((
+                    cur_new_embed,
+                    torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device)
+                ), dim=0))
+                if cur_len > 0:
+                    new_labels_padded[i, :cur_len] = cur_new_labels
+                    attention_mask[i, :cur_len] = True
+                    position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
+
+        new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
+
+        if _labels is None:
+            new_labels = None
+        else:
+            new_labels = new_labels_padded
+
+        if _attention_mask is None:
+            attention_mask = None
+        else:
+            attention_mask = attention_mask.to(dtype=_attention_mask.dtype)
+
+        if _position_ids is None:
+            position_ids = None
+
+        # FUTURE Add moe loss
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+
+    # END
+
+    # BEGIN qbs
+
+    # def get_video_tower(self):
+    #     return self.get_model().get_video_tower()
+    
+    # def initialize_video_tokenizer(self, model_args, tokenizer):
+    #     # FUTURE: maybe some tokenizer-operation here.
+    #     pass
+
+    # def encode_videos(self, videos):
+    #     video_features = self.get_model().get_video_tower()(pixel_values=videos)[1]
+    #     # FUTURE adapt projection MoE here
+    #     video_features = self.get_model().mm_video_projector(video_features)
+    #     return video_features
+
+    def prepare_inputs_labels_video(
+        self,
+        input_ids,
+        position_ids,
+        attention_mask,
+        past_key_values,
+        labels,
+        videos,
+    ):
+        mlp_balanced_loss = None
+        mlp_router_z_loss = None
+
+        video_tower = self.get_video_tower()
+        video_features = self.encode_videos(videos=videos)
+
+        # Dealing with text tokens here, adapted from LLaVA 
+        _labels = labels
+        _position_ids = position_ids
+        _attention_mask = attention_mask
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
+        else:
+            attention_mask = attention_mask.bool()
+        if position_ids is None:
+            position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
+        if labels is None:
+            labels = torch.full_like(input_ids, IGNORE_INDEX)
+        # remove the padding using attention_mask -- FIXME(Original comments reason not known for now)
+        _input_ids = input_ids
+        input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
+        labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
+
+        new_input_embeds = []
+        new_labels = []
+        cur_video_idx = 0
+        for batch_idx, cur_input_ids in enumerate(input_ids):
+            num_videos = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
+            if num_videos == 0:
+                cur_video_features = video_features[cur_video_idx]
+                cur_input_embeds_1 = self.get_model().embed_tokens(cur_input_ids)
+                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_video_features[0:0]], dim=0)
+                new_input_embeds.append(cur_input_embeds)
+                new_labels.append(labels[batch_idx])
+                cur_video_idx += 1
+                continue
+
+            video_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+            cur_input_ids_noim = []
+            cur_labels = labels[batch_idx]
+            cur_labels_noim = []
+            for i in range(len(video_token_indices) - 1):
+                cur_input_ids_noim.append(cur_input_ids[video_token_indices[i]+1:video_token_indices[i+1]])
+                cur_labels_noim.append(cur_labels[video_token_indices[i]+1:video_token_indices[i+1]])
+            split_sizes = [x.shape[0] for x in cur_labels_noim]
+            cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
+            cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
+            cur_new_input_embeds = []
+            cur_new_labels = []
+
+            for i in range(num_videos + 1):
+                cur_new_input_embeds.append(cur_input_embeds_no_im[i])
+                cur_new_labels.append(cur_labels_noim[i])
+                if i < num_videos:
+                    cur_video_features = video_features[cur_video_idx]
+                    cur_video_idx += 1
+                    cur_new_input_embeds.append(cur_video_features)
+                    cur_new_labels.append(torch.full((cur_video_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
 
             cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
 

@@ -73,7 +73,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
     
     # BEGIN
     def set_modal(self, modal: str):
-        assert modal in ['image', 'audio', 'video', 'point']
+        assert modal in ['image', 'audio', 'video', '3d', '3d_video']
         self.modal = modal
 
     # END
@@ -90,13 +90,18 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         images: Optional[torch.FloatTensor] = None,
+        video_dict: Optional[dict] = None,
         pixel_values: Optional[torch.FloatTensor] = None,
         image_sizes: Optional[List[List[int]]] = None,
         return_dict: Optional[bool] = None,
+        image_grid_thw: Optional[torch.FloatTensor] = None,
+        video_grid_thw: Optional[torch.FloatTensor] = None,
         **kwargs # for llama3, upgrade the transformers and will receive an additional argument cache_position
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-
-        if inputs_embeds is None:
+        # print(f"Forward images shape: {images.shape if images is not None else None}, input_ids shape: {input_ids.shape if input_ids is not None else None}")
+        # print(input_ids.shape if input_ids is not None else "input_ids is None")
+        # print(inputs_embeds.shape if inputs_embeds is not None else "inputs_embeds is None")
+        if inputs_embeds is None and images is not None:
             # BEGIN 
             if self.modal == 'image':
             # END
@@ -116,9 +121,27 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
                     past_key_values,
                     labels,
                     images,
-                    image_sizes
+                    self.modal,
+                    image_sizes,
+                    image_grid_thw,
                 )
             # BEGIN
+            # elif self.modal == 'audio':
+            #     (
+            #         input_ids,
+            #         position_ids,
+            #         attention_mask,
+            #         past_key_values,
+            #         inputs_embeds,
+            #         labels,
+            #     ) = self.prepare_inputs_labels_audio(
+            #         input_ids=input_ids,
+            #         position_ids=position_ids,
+            #         attention_mask=attention_mask,
+            #         past_key_values=past_key_values,
+            #         labels=labels,
+            #         audios=pixel_values
+            #     )
             elif self.modal == 'audio':
                 (
                     input_ids,
@@ -127,14 +150,102 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
                     past_key_values,
                     inputs_embeds,
                     labels,
-                ) = self.prepare_inputs_labels_audio(
-                    input_ids=input_ids,
-                    position_ids=position_ids,
-                    attention_mask=attention_mask,
-                    past_key_values=past_key_values,
-                    labels=labels,
-                    audios=pixel_values
+                    mlp_balance_loss,
+                    mlp_router_z_loss
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    labels,
+                    images,
+                    self.modal,
+                    image_sizes,
                 )
+            # BEGIN qbs
+            # elif self.modal == 'video':
+            #     (
+            #         input_ids,
+            #         position_ids,
+            #         attention_mask,
+            #         past_key_values,
+            #         inputs_embeds,
+            #         labels,
+            #     ) = self.prepare_inputs_labels_video(
+            #         input_ids=input_ids,
+            #         position_ids=position_ids,
+            #         attention_mask=attention_mask,
+            #         past_key_values=past_key_values,
+            #         labels=labels,
+            #         videos=pixel_values
+            #     )
+            elif self.modal == 'video':
+                # print(f"[eagle_llama.py] video_grid_thw shape: {video_grid_thw.shape}")
+                (
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    inputs_embeds,
+                    labels,
+                    mlp_balance_loss,
+                    mlp_router_z_loss
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    labels,
+                    images,
+                    # pixel_values,
+                    self.modal,
+                    image_sizes,
+                    video_grid_thw=video_grid_thw
+                )
+            # END qbs
+            # BEGIN hhz
+            elif self.modal == '3d':
+                (
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    inputs_embeds,
+                    labels,
+                    mlp_balance_loss,
+                    mlp_router_z_loss
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    labels,
+                    images,
+                    self.modal,
+                    image_sizes,
+                )
+            elif self.modal == '3d_video':
+                (
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    inputs_embeds,
+                    labels,
+                    mlp_balance_loss,
+                    mlp_router_z_loss
+                ) = self.prepare_inputs_labels_3d_video(
+                    input_ids,
+                    position_ids,
+                    attention_mask,
+                    past_key_values,
+                    labels,
+                    images,
+                    video_dict,
+                    self.modal,
+                    image_sizes,
+                )
+            # END hhz
 
         out = super().forward(
             input_ids=input_ids,
@@ -151,11 +262,11 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
 
         # Adapted from CuMo, add moe loss
         # if self.config.training:
-        if getattr(self.config, 'mlp_smoe', False):
+        if self.config.mlp_smoe:
             loss = out['loss']
             if self.config.local_rank == 0:
                 print('language loss: ', loss.item())
-            if getattr(self.config, 'mlp_smoe', False):
+            if self.config.mlp_smoe:
                 mlp_balance_loss = mlp_balance_loss.sum(dim=-1).mean()
                 mlp_balance_loss = self.config.balance_loss_coef * mlp_balance_loss
                 loss += mlp_balance_loss
@@ -164,7 +275,7 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
                 loss += mlp_router_z_loss
 
             if self.config.local_rank == 0:
-                if getattr(self.config, 'mlp_smoe', False):
+                if self.config.mlp_smoe:
                     print('mlp balance loss: ', mlp_balance_loss.item(), 'mlp router z loss: ', mlp_router_z_loss.item())
 
             out['loss'] = loss
@@ -176,39 +287,106 @@ class EagleLlamaForCausalLM(LlamaForCausalLM, EagleMetaForCausalLM):
         self,
         inputs: Optional[torch.Tensor] = None,
         images: Optional[torch.Tensor] = None,
+        video_dict: Optional[dict] = None,
         image_sizes: Optional[torch.Tensor] = None,
+        modality: Optional[str] = None,
+        image_grid_thw: Optional[torch.FloatTensor] = None,
+        video_grid_thw: Optional[torch.FloatTensor] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
-        # BEGIN hxl
-        modality = kwargs.pop("modality", 'image')
-        # END hxl
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
 
         if images is not None:
-            (
-                inputs,
-                position_ids,
-                attention_mask,
-                _,
-                inputs_embeds,
-                _,
-                _,# add two for moe
-                _
-            ) = self.prepare_inputs_labels_for_multimodal(
-                inputs,
-                position_ids,
-                attention_mask,
-                None,
-                None,
-                images,
-                image_sizes=image_sizes,
-                modality=modality
-            )
+            if modality == '3d_video':
+                (
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    _,
+                    inputs_embeds,
+                    _,
+                    _,
+                    _ # Because of the adding of moe
+                ) = self.prepare_inputs_labels_3d_video(
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    None,
+                    None,
+                    images,
+                    video_dict,
+                    modality=modality,
+                    image_sizes=image_sizes
+                )
+            elif modality == 'image':
+                (
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    _,
+                    inputs_embeds,
+                    _,
+                    _,
+                    _ # Because of the adding of moe
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    None,
+                    None,
+                    images,
+                    modality=modality,
+                    image_sizes=image_sizes,
+                    image_grid_thw=image_grid_thw
+                )
+            elif modality == 'video':
+                (
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    _,
+                    inputs_embeds,
+                    _,
+                    _,
+                    _ # Because of the adding of moe
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    None,
+                    None,
+                    images,
+                    modality=modality,
+                    image_sizes=image_sizes,
+                    video_grid_thw=video_grid_thw
+                )
+            else:
+                (
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    _,
+                    inputs_embeds,
+                    _,
+                    _,
+                    _ # Because of the adding of moe
+                ) = self.prepare_inputs_labels_for_multimodal(
+                    inputs,
+                    position_ids,
+                    attention_mask,
+                    None,
+                    None,
+                    images,
+                    modality=modality,
+                    image_sizes=image_sizes
+                )
+            # print("Image not none")
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
+            # print("Image none")
 
         return super().generate(
             position_ids=position_ids,

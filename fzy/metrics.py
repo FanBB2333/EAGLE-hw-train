@@ -68,6 +68,7 @@ def evaluate_predictions(predictions, ground_truths, thresholds=[0.3, 0.5, 0.7])
 
 def load_data():
     import json
+    # datasets = ["activitynet", "charades", "qvhighlights", "youcook2"]
     datasets = ["activitynet", "charades", "qvhighlights", "youcook2"]
     # datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast", "youcook2"]
     # datasets = ["activitynet", "charades", "qvhighlights", "valor", "youcook2"]

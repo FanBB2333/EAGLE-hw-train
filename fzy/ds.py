@@ -8,6 +8,7 @@ from PIL import Image
 import pandas as pd
 from tqdm import tqdm
 from copy import deepcopy
+from datasets import load_dataset
 import torchvision.transforms as transforms
 import cv2
 from pathlib import Path
@@ -49,6 +50,18 @@ def get_vid(fullname):
     second_last_underscore = fullname.rfind('_', 0, fullname.rfind('_'))
     
     return fullname[:second_last_underscore]
+
+
+sample_format_lambda = lambda question, answer, image_path, id, path_prefix="videos": {
+    'id': str(id),
+    'conversations': [
+        {'from': 'human', 'value': question},
+        {'from': 'gpt', 'value': answer}
+    ],
+    'image_abs': image_path, # /home1/hxl/disk/EAGLE/qbs/Eagle_LanguageBind/dataset/Video/added/ActivityNetCaps/v1-3/train_val/v_ehGHCYKzyZ8.mp4
+    'image': f"{path_prefix}/{image_path.split('/')[-1]}" # v_ehGHCYKzyZ8.mp4
+}
+
 
 class VideoDS(Dataset):
     def __init__(self, name):
@@ -130,6 +143,68 @@ class ActivityNetCaps(VideoDS):
 
         print(f"[Train] [{self.name}] length of data: {len(self.data)}")
         
+
+class ActivityNetQA(VideoDS):
+    def __init__(self, db_path = PROJECT_BASE / 'dataset/Video/added' / 'ActivityNetQA', train=False):
+        name = 'ActivityNetQA'
+        super().__init__(name)
+        self.db_path = db_path
+        self.video_path = self.db_path / "v1-3/train_val"
+        if not train:
+            pass
+        else:
+            self.load_train()
+    
+    def load_train(self):
+        # load the train_a.json and train_q.json
+        train_answers = json.load(open(self.db_path / "train_a.json", 'r'))
+        train_questions = json.load(open(self.db_path / "train_q.json", 'r'))
+        self.data = list()
+        for idx, item_qa in enumerate(tqdm(zip(train_questions, train_answers))):
+            item, answer = item_qa
+            assert item['question_id'] == answer['question_id'], f"Question ID mismatch: {item['question_id']} != {answer['question_id']}"
+            video_path = self.video_path / f"v_{item['video_name']}.mp4"
+            if not video_path.exists():
+                continue
+            question = f"<image>\n{item['question']}"
+            answer = answer['answer']
+            ds_item = {
+                'idx': idx,
+                'data_path': str(video_path),
+                'question': question,
+                'answer': answer,
+            }
+            self.data.append(ds_item)
+        print(f"[Train] [{self.name}] length of data: {len(self.data)}")
+        
+    
+    def reformat(self):
+        train_answers = json.load(open(self.db_path / "train_a.json", 'r'))
+        train_questions = json.load(open(self.db_path / "train_q.json", 'r'))
+        ret = list()
+        for idx, item_qa in enumerate(tqdm(zip(train_questions, train_answers))):
+            item, answer = item_qa
+            assert item['question_id'] == answer['question_id'], f"Question ID mismatch: {item['question_id']} != {answer['question_id']}"
+            # item = train_questions[0]
+            video_path = self.db_path / "v1-3/train_val" / f"v_{item['video_name']}.mp4"
+            if not video_path.exists():
+                continue
+            question = f"<image>\n{item['question']}"
+            answer = answer['answer']
+            ds_item = sample_format_lambda(
+                question=question,
+                answer=answer,
+                image_path=str(video_path),
+                id=idx,
+                path_prefix="v1-3/train_val"
+            )
+            ret.append(ds_item)
+        # save to json file
+        with open(self.db_path / "activitynetqa_train.json", 'w') as f:
+            json.dump(ret, f, indent=4)
+        print(f"Processed ActivityNetQA dataset, saved to {self.db_path / 'activitynetqa_train.json'}")
+        
+
 
 class Breakfast(VideoDS):
     def __init__(self, db_path = DATASET_BASE / 'breakfast'):
@@ -435,7 +510,9 @@ class YouCook2(VideoDS):
         super().__init__(name)
         self.db_path = db_path
         self.anno_path = self.db_path
-        self.video_path = self.db_path / "raw_videos"
+        # self.video_path = self.db_path / "raw_videos"
+        # self.video_path = Path("/home2/fzy/raw_videos")
+        self.video_path = Path("/home2/fzy/raw_videos_8")
         if not train:
             self.load_data()
         else:
@@ -460,6 +537,7 @@ class YouCook2(VideoDS):
             query = row['sentence']
             recipe_type = row['recipe_type']
             video_path = val_video_path / str(recipe_type) / f"{row['youtube_id']}"
+            # print(f"Loading video: {video_path}")
             # test whether video_path.mp4 or video_path.mkv exist
             mp4_path = video_path.with_suffix('.mp4')
             mkv_path = video_path.with_suffix('.mkv')
@@ -482,7 +560,7 @@ class YouCook2(VideoDS):
         # self.data = data
         ignore_idx = [1032, 1908, 3076]
         self.data = self.filter_data(ignore_idx, data)
- 
+        print(f"Loading youcook2_val data")
         print(f"[{self.name}] length of data: {len(self.data)}")
         
     def load_train(self):
@@ -553,6 +631,32 @@ class YouCook2(VideoDS):
         # self.data = data[ignore_idx[-1]+1:]
         print(f"[{self.name}] length of data: {len(self.data)}")
 
+class MVBench(VideoDS):
+    def __init__(self, db_path = DATASET_BASE / 'MVBench', train=False):
+        name = 'mvbench'
+        super().__init__(name)
+        self.db_path = db_path
+        self.anno_path = self.db_path / "test.json"
+        self.video_path = self.db_path
+        self.classes = ['action_sequence', 'moving_count', 'action_prediction', 'episodic_reasoning', 'action_antonym', 'action_count', 'scene_transition', 'object_shuffle', 'object_existence', 'fine_grained_pose', 'unexpected_action', 'moving_direction', 'state_change', 'object_interaction', 'character_order', 'action_localization', 'counterfactual_inference', 'fine_grained_action', 'moving_attribute', 'egocentric_navigation']
+        self.load_data()
+    
+    def load_data(self):
+        # load the json file
+        self.data = list()
+        self.test_json = json.load(open(self.anno_path, 'r'))
+        for c, cprefix in self.test_json['root'].items():
+            # c: class name
+            # cpath: path to the json file
+            if c not in self.classes:
+                continue
+            meta_c = self.test_json['meta'][c]
+            
+        print(f"[{self.name}] Total {len(self.test_json)} samples")
+        # for c in self.classes:
+        #     data = load_dataset(str(self.db_path), c)
+        #     print(f"[{self.name}] Total {len(data)} samples")
+
 def test():
     import json
     path = "/home6/fzy/repos/EAGLE/dataset/ActivityNetCaps/val_1.json"
@@ -560,4 +664,4 @@ def test():
     print(list(val1.values())[0])
 
 if __name__ == "__main__":
-    pass
+    m = MVBench()

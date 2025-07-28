@@ -147,7 +147,7 @@ def gen_prompt(data, args):
         
     # conv.append_message(conv.roles[1], question2)
     # conv.append_message(conv.roles[0], question)
-    # conv.append_message(conv.roles[1], None)
+    conv.append_message(conv.roles[1], None)
     prompt_question = conv.get_prompt()
     return prompt_question
 

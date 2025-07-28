@@ -781,23 +781,21 @@ class CLIPVisionTransformer(nn.Module):
         )
 
         last_hidden_state = encoder_outputs[0]
+        last_hidden_state = self.post_layernorm(last_hidden_state)
         pooled_output = last_hidden_state[:, 0, :]
-        # pooled_output = last_hidden_state
-        pooled_output = self.post_layernorm(pooled_output)
 
-        # pooled_output = pooled_output.reshape(B, T, -1).mean(1) ################################
+        pooled_token_output = pooled_output.reshape(B, T, -1) ################################
+        # pooled_output = pooled_token_output.mean(1) ################################
         
-        # return pooled_output.reshape(B, T, pooled_output.size(2), pooled_output.size(3))
-        return pooled_output.reshape(B, T, -1)
-        # if not return_dict:
-        #     return (last_hidden_state, pooled_output) + encoder_outputs[1:]
+        if not return_dict:
+            return (last_hidden_state, pooled_output) + encoder_outputs[1:]
 
-        # return BaseModelOutputWithPooling(
-        #     last_hidden_state=last_hidden_state,
-        #     pooler_output=pooled_output,
-        #     hidden_states=encoder_outputs.hidden_states,
-        #     attentions=encoder_outputs.attentions,
-        # )
+        return BaseModelOutputWithPooling(
+            last_hidden_state=last_hidden_state.reshape(B, T, last_hidden_state.size(-2), last_hidden_state.size(-1)).reshape(B, -1, last_hidden_state.size(-1)),
+            pooler_output=pooled_token_output,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
 
 
 @add_start_docstrings(

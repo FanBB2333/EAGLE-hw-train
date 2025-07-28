@@ -95,6 +95,14 @@ class MultiBackboneChannelConcatenationVisionTower(nn.Module):
                 clip_vision_tower = HRCLIPVisionTower("./model/Vision_Encoder/clip-vit-large-patch14-336", clip_args)     
                 clip_vision_tower.load_model()
                 self.vision_towers.append(clip_vision_tower)
+
+            elif name == 'clip-224':
+                clip_args = deepcopy(args)
+                clip_args.input_image_size = 192 # actually 448, will have no effect
+                clip_args.freeze_vision = False
+                clip_vision_tower = HRCLIPVisionTower("./model/Vision_Encoder/clip-vit-base-patch32", clip_args)     
+                clip_vision_tower.load_model()
+                self.vision_towers.append(clip_vision_tower)
         
         # a hardcode here, so we always use convnext in the vision encoder mixture
         self.image_processor = convnext_vision_tower.image_processor

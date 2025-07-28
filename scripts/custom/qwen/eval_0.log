@@ -1,0 +1,50 @@
+./checkpoints/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava-294-168-old
+youcook2
+/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/torchvision/transforms/_functional_video.py:6: UserWarning: The 'torchvision.transforms._functional_video' module is deprecated since 0.12 and will be removed in the future. Please use the 'torchvision.transforms.functional' module instead.
+  warnings.warn(
+/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/torchvision/transforms/_transforms_video.py:22: UserWarning: The 'torchvision.transforms._transforms_video' module is deprecated since 0.12 and will be removed in the future. Please use the 'torchvision.transforms' module instead.
+  warnings.warn(
+/home6/fzy/EAGLE/eagle/model/multimodal_encoder/languagebind/audio/processing_audio.py:17: UserWarning: torchaudio._backend.set_audio_backend has been deprecated. With dispatcher enabled, this function is no-op. You can remove the function call.
+  torchaudio.set_audio_backend("soundfile")
+/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/timm/models/layers/__init__.py:48: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+You are using a model of type llama to instantiate a model of type eagle_llama. This is not supported for all configurations of models and can yield errors.
+Namespace(config='', model_path='./checkpoints/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava-294-168-old', model_name='eagle', task='youcook2', model_args='', batch_size=1, device='cuda', output_path=None, gen_kwargs='', conv_template='llama3', use_cache=None, distributed=False)
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:02<00:02,  2.42s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.38s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:03<00:00,  1.53s/it]
+The new embeddings will be initialized from a multivariate normal distribution that has old embeddings' mean and covariance. As described in this article: https://nlp.stanford.edu/~johnhew/vocab-expansion.html. To disable this, use `mean_resizing=False`
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:02<00:02,  2.26s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.10s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.27s/it]
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+Vision tower ./model/disk2/Qwen/Qwen2-VL-2B-Instruct is loaded.
+Current projector type: mlp2x_gelu
+Modality: video, model type: <class 'eagle.model.language_model.eagle_llama.EagleLlamaForCausalLM'>, pretrained model: ./checkpoints/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava-294-168-old, task: youcook2
+Traceback (most recent call last):
+  File "/home6/fzy/EAGLE/eval/eval_video_qwen.py", line 592, in <module>
+    evaluate(args=args)
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home6/fzy/EAGLE/eval/eval_video_qwen.py", line 262, in evaluate
+    ds = YouCook2()
+         ^^^^^^^^^^
+  File "/home6/fzy/EAGLE/fzy/ds.py", line 514, in __init__
+    self.load_data()
+  File "/home6/fzy/EAGLE/fzy/ds.py", line 529, in load_data
+    val_data = pd.read_csv(val_file)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/pandas/io/parsers/readers.py", line 1880, in _make_engine
+    self.handles = get_handle(
+                   ^^^^^^^^^^^
+  File "/home6/fzy/miniforge3/envs/qv/lib/python3.12/site-packages/pandas/io/common.py", line 873, in get_handle
+    handle = open(
+             ^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home6/fzy/EAGLE/dataset/youcook2/youcook2_val.csv'

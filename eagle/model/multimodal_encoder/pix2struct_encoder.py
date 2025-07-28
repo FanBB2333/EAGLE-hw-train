@@ -143,5 +143,4 @@ class Pix2StructLargeVisionTower(nn.Module):
 
     @property
     def num_patches(self):
-        return 0
         return self.config['num_patches']

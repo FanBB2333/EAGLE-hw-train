@@ -20,6 +20,7 @@ import base64
 import torch
 import math
 import ast
+import cv2
 
 from transformers import StoppingCriteria
 from eagle.constants import IMAGE_TOKEN_INDEX
@@ -178,8 +179,36 @@ def expand2square(pil_img, background_color):
         result.paste(pil_img, ((height - width) // 2, 0))
         return result
 
+def get_video_frames(video_path, target_size = (294, 168), max_frames = 8) -> list:
+    # print("Test:", video_path)
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise ValueError(f"failed to open {video_path}")
+    frames = []
+    frame_count = 0
+    fps_interval = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / (max_frames-1) ))
 
-def process_images(images, image_processor, model_cfg):
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_count % fps_interval == 0:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgb_frame)
+            # rgba_image = pil_image.convert('RGBA')
+            resized_img = pil_image.resize(target_size, Image.BICUBIC)
+            frames.append(resized_img)
+
+        frame_count += 1
+        if len(frames) >= max_frames:
+            break
+
+    cap.release()
+    # print(frames)
+    return frames
+
+def process_images(images, image_processor, model_cfg, modality=None):
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
     new_images = []
     if image_aspect_ratio == 'pad':
@@ -195,25 +224,32 @@ def process_images(images, image_processor, model_cfg):
         # BEGIN hxl
         mm_vision_tower = getattr(model_cfg, 'mm_vision_tower', 'image')
         if 'audio' in mm_vision_tower.lower():
-            # print(images)
-            image_tensors = torch.tensor(images[0]['array']).unsqueeze(0) 
+            image_tensors = images[0]['array']
+            if 'languagebind' in mm_vision_tower.lower():
+                image_tensors = torch.tensor(image_tensors).unsqueeze(0) 
             return image_processor((image_tensors, images[0]['sampling_rate']), return_tensors='pt')['pixel_values']
         if 'video' in mm_vision_tower.lower():
             return image_processor(images, return_tensors='pt')['pixel_values'] 
-
+        if 'qwen2-vl' in mm_vision_tower.lower():
+            # print(type(image_processor))
+            if modality == 'video':
+                # print(f"images: {images}")
+                image_list = [get_video_frames(i) for i in images]
+                return image_processor(image_list, return_tensors='pt')
+        
+            return image_processor(images, return_tensors='pt')
+        if 'qwen2.5-vl' in mm_vision_tower.lower():
+            # print(type(image_processor))
+            return image_processor(images, return_tensors='pt')
         # END hxl    
         return image_processor(images, return_tensors='pt')['pixel_values']
     if all(x.shape == new_images[0].shape for x in new_images):
         new_images = torch.stack(new_images, dim=0)
     return new_images
 
-
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
-    # image token index: <video_token>
-    # print(f"prompt: {prompt}")
     prompt_chunks = [tokenizer(chunk).input_ids for chunk in prompt.split('<image>')]
-    # print(f"len(prompt_chunks): {len(prompt_chunks)}")
-    
+
     def insert_separator(X, sep):
         return [ele for sublist in zip(X, [sep]*len(X)) for ele in sublist][:-1]
 
@@ -226,7 +262,6 @@ def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX
     for x in insert_separator(prompt_chunks, [image_token_index] * (offset + 1)):
         input_ids.extend(x[offset:])
 
-    # print(f"input_ids: {input_ids}")
     if return_tensors is not None:
         if return_tensors == 'pt':
             return torch.tensor(input_ids, dtype=torch.long)

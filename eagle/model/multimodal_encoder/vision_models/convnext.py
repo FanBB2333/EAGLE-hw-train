@@ -487,7 +487,6 @@ def _create_convnext(variant, pretrained=False, **kwargs):
         # NOTE fcmae pretrained weights have no classifier or final norm-layer (`head.norm`)
         # This is workaround loading with num_classes=0 w/o removing norm-layer.
         kwargs.setdefault('pretrained_strict', False)
-
     model = build_model_with_cfg(
         ConvNeXt, variant, pretrained,
         pretrained_filter_fn=checkpoint_filter_fn,
@@ -880,9 +879,8 @@ default_cfgs = generate_default_cfgs({
         mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
         input_size=(3, 320, 320), pool_size=(10, 10), crop_pct=1.0, num_classes=768),
     'convnext_xxlarge.clip_laion2b_soup': _cfg(
-        # hf_hub_id='./model/Vision_Encoder/laion/CLIP-convnext_xxlarge-laion2B-s34B-b82K-augreg-soup',
-        # hf_hub_filename='open_clip_pytorch_model.bin',
-        file='./model/Vision_Encoder/laion/CLIP-convnext_xxlarge-laion2B-s34B-b82K-augreg-soup/open_clip_pytorch_model.bin',
+        hf_hub_id='./model/Vision_Encoder/laion/CLIP-convnext_xxlarge-laion2B-s34B-b82K-augreg-soup',
+        hf_hub_filename='open_clip_pytorch_model.bin',
         mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
         input_size=(3, 256, 256), pool_size=(8, 8), crop_pct=1.0, num_classes=1024),
     'convnext_xxlarge.clip_laion2b_rewind': _cfg(
@@ -1012,8 +1010,8 @@ default_cfgs = generate_default_cfgs({
 #     return model
 
 
-@register_model
-def convnext_xxlarge(vision_tower_name, pretrained=False, **kwargs) -> ConvNeXt:
+# @register_model
+def convnext_xxlarge(pretrained=False, **kwargs) -> ConvNeXt:
     model_args = dict(depths=[3, 4, 30, 3], dims=[384, 768, 1536, 3072], norm_eps=kwargs.pop('norm_eps', 1e-5))
     model = _create_convnext('convnext_xxlarge', pretrained=pretrained, **dict(model_args, **kwargs))
     return model

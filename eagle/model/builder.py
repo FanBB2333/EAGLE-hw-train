@@ -35,23 +35,12 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
-from accelerate import Accelerator
 from eagle.model import *
 from eagle.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, distributed=None, **kwargs):
-    # BEGIN hxl
-    if device_map == "":
-        device_map = "auto"
-    if distributed is not None:
-        accelerator = distributed
-        device_map = {"": accelerator.process_index}
-        
-
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, modal='image', **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
-
-    # END hxl
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
@@ -126,6 +115,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             model = EagleLlamaForCausalLM.from_pretrained(
                 model_path,
                 low_cpu_mem_usage=True,
+                # ignore_mismatched_sizes=True,
                 **kwargs
             )
     else:
@@ -150,6 +140,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 **kwargs
             )            
             # model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+    if tokenizer == False:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     image_processor = None
 
@@ -166,29 +158,18 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if not vision_tower.is_loaded:
             vision_tower.load_model(device_map=device_map)
         if device_map != 'auto':
-            if distributed is not None:
-                vision_tower.to(device=f"cuda:{accelerator.process_index}", dtype=torch.float16)
-            else:
-                # normal
-                vision_tower.to(device=device_map, dtype=torch.float16)
-        image_processor = vision_tower.image_processor
-    # BRGIN hxl
-    # load for other modal
-    else:
-        vision_tower = model.get_vision_tower()
-        if not vision_tower.is_loaded:
-            vision_tower.load_model(device_map=device_map)
-        if device_map != 'auto' and device_map != '':
             vision_tower.to(device=device_map, dtype=torch.float16)
         image_processor = vision_tower.image_processor
-    # END hxl
-
 
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
-
+    # if modal != 'image':
+    #     modal = kwargs['modal']
+    #     model.set_modal(modal)
+    #     if modal == 'video':
+    #         vision_tower = model.get_vision_tower()
     return tokenizer, model, image_processor, context_len
 
 # BEGIN hxl
@@ -249,4 +230,64 @@ def load_audio_pretrained_model(
 
     return tokenizer, model, audio_processor, context_len
 
+def load_video_pretrain_model(
+    model_path, 
+    model_base, 
+    model_name, 
+    load_8bit=False, 
+    load_4bit=False, 
+    device_map="auto", 
+    device="cuda", 
+    use_flash_attn=False, 
+    **kwargs 
+):
+    kwargs = {
+        "device_map": device_map,
+        **kwargs
+    }
+    if device != "cuda":
+        kwargs['device_map'] = {"": device}
+
+    # Keep unchange, maybe useless
+    if load_8bit:
+        kwargs['load_in_8bit'] = True
+    elif load_4bit:
+        kwargs['load_in_4bit'] = True
+        kwargs['quantization_config'] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type='nf4'
+        )
+    else:
+        kwargs['torch_dtype'] = torch.float16
+
+    if use_flash_attn:
+        kwargs['attn_implementation'] = 'flash_attention_2'
+
+    # Always load the same model struct temporarilly
+    model = EagleLlamaForCausalLM.from_pretrained(
+        model_path,
+        low_cpu_mem_usage=True,
+        **kwargs
+    )
+    vision_tower = getattr(model.config, 'mm_vision_tower', False)
+    if vision_tower:
+        if 'LanguageBind_Video_FT' in vision_tower:
+            from eagle.model.multimodal_encoder.video_models.processing_video import LanguageBindVideoProcessor
+            from eagle.model.multimodal_encoder.video_models.tokenization_video import LanguageBindVideoTokenizer
+            from eagle.model.multimodal_encoder.video_models.configuration_video import LanguageBindVideoConfig
+            tokenizer = LanguageBindVideoTokenizer.from_pretrained(vision_tower)
+            config = LanguageBindVideoConfig.from_pretrained(vision_tower)
+            video_processor = LanguageBindVideoProcessor(config, tokenizer)
+        else:
+            raise ValueError(f"Unknown vision tower {vision_tower}")
+    else:
+        raise ValueError(f"Unknown vision tower {vision_tower}")
+    if hasattr(model.config, "max_sequence_length"):
+        context_len = model.config.max_sequence_length
+    else:
+        context_len = 512
+
+    return tokenizer, model, video_processor, context_len
 # END hxl

@@ -17,11 +17,6 @@ def make_list_of_images(x):
 torchaudio.set_audio_backend("soundfile")
 
 def torchaudio_loader(path):
-    # BEGIN hxl
-    # Load for parquet dataset
-    if isinstance(path, dict):
-        return path['array']
-    # END
     return torchaudio.load(path)
 
 def int16_to_float32_torch(x):
@@ -150,15 +145,8 @@ class LanguageBindAudioProcessor(ProcessorMixin):
 
         if images is not None:
             images = make_list_of_images(images)
-            # BEGIN hxl
-            if isinstance(images[0], tuple):
-                # For parquert dataset, try to follow the pipeline that load the raw audio 
-                image_features = [self.transform(images[0])]
-                image_features = torch.stack(image_features)
-            else:
-                image_features = [self.image_processor(image, self.transform) for image in images]
-                image_features = torch.stack(image_features)
-            # END
+            image_features = [self.image_processor(image, self.transform) for image in images]
+            image_features = torch.stack(image_features)
 
         if text is not None and images is not None:
             encoding["pixel_values"] = image_features

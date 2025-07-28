@@ -2,7 +2,6 @@ import cv2
 import decord
 import numpy as np
 import torch
-import signal
 from PIL import Image
 from decord import VideoReader, cpu
 from torchvision import transforms
@@ -22,11 +21,6 @@ def make_list_of_images(x):
     if not isinstance(x, list):
         return [x]
     return x
-
-
-def timeout_handler(signum, frame):
-    raise TimeoutError("Execution timed out!")
-
 
 def get_video_transform(config):
     config = config.config
@@ -78,11 +72,12 @@ def get_video_transform(config):
 def load_and_transform_video(
         video_path,
         transform,
-        video_decode_backend='opencv',
+        video_decode_backend='decord',
         clip_start_sec=0.0,
         clip_end_sec=None,
         num_frames=8,
 ):
+    # print(f"video_path: {video_path}, video_decode_backend: {video_decode_backend}, num_frames: {num_frames}")
     if video_decode_backend == 'pytorchvideo':
         #  decord pyav
         video = EncodedVideo.from_path(video_path, decoder="decord", decode_audio=False)
@@ -94,22 +89,17 @@ def load_and_transform_video(
 
     elif video_decode_backend == 'decord':
         decord.bridge.set_bridge('torch')
-        # BEGIN hxl
-        # decord_vr = VideoReader(video_path)
-        decord_vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-        # END hxl
+        decord_vr = VideoReader(video_path, ctx=cpu(0))
         duration = len(decord_vr)
-        # print(f"Num frames: {num_frames}")
         frame_id_list = np.linspace(0, duration-1, num_frames, dtype=int)
-        # for idx, frame in enumerate(frame_id_list):
-        #     data = decord_vr.get_batch([frame])
-        #     print(f"Success! get {idx}: {frame}")
         video_data = decord_vr.get_batch(frame_id_list)
         video_data = video_data.permute(3, 0, 1, 2)  # (T, H, W, C) -> (C, T, H, W)
         video_outputs = transform(video_data)
 
     elif video_decode_backend == 'opencv':
+        # print(f"video_path: {video_path}")
         cv2_vr = cv2.VideoCapture(video_path)
+        # print(f"video_path: {video_path}, isOpened: {cv2_vr.isOpened()}")
         duration = int(cv2_vr.get(cv2.CAP_PROP_FRAME_COUNT))
         frame_id_list = np.linspace(0, duration-1, num_frames, dtype=int)
 
