@@ -57,7 +57,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument(
         "--task",
         default="charades",
-        choices=["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2"],
+        choices=["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2", "mvbench"],
         help="To get full list of tasks, use the command lmms-eval --tasks list",
     )
     parser.add_argument(
@@ -140,6 +140,8 @@ def gen_prompt(data, args):
         duration = data["duration"]
         # question1 = f"{data['question']}"
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+    elif task in ["mvbench"]:
+        question1 = data["question"]
     else:
         raise NotImplementedError(f"Task {task} not implemented")
 
@@ -261,6 +263,8 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     elif task == "youcook2":
         ds = YouCook2()
         # handle_stuck = True
+    elif task == "mvbench":
+        ds = MVBench()
     else:
         raise NotImplementedError(f"Task {task} not implemented")
     # return

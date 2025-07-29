@@ -5,3 +5,4 @@ checkpoints
 *.pyc
 model
 /output
+/ocrb

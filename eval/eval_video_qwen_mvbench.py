@@ -353,6 +353,7 @@ class MVBench_dataset(Dataset):
             if c == answer:
                 answer_idx = idx
         question = question.rstrip()
+        question = question + "Only give the best option.\n"
         answer = f"({chr(ord('A') + answer_idx)}) {answer}"
         return question, answer
 

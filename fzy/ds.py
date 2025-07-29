@@ -651,11 +651,38 @@ class MVBench(VideoDS):
             if c not in self.classes:
                 continue
             meta_c = self.test_json['meta'][c]
-            
-        print(f"[{self.name}] Total {len(self.test_json)} samples")
+            for item in meta_c:
+                video_path = self.video_path / cprefix / item['video']
+                if not video_path.exists():
+                    print(f"Video file not found: {video_path}")
+                    continue
+                question, answer = self.qa_template(item)
+                ds_item = {
+                    'data_path': str(video_path),
+                    'question': question,
+                    'answer': answer,
+                    'class': c,
+                }
+                self.data.append(ds_item)
+
+        print(f"[{self.name}] Total {len(self.data)} samples")
         # for c in self.classes:
         #     data = load_dataset(str(self.db_path), c)
         #     print(f"[{self.name}] Total {len(data)} samples")
+    def qa_template(self, data):
+        question = f"Question: {data['question']}\n"
+        question += "Options:\n"
+        answer = data['answer']
+        answer_idx = -1
+        for idx, c in enumerate(data['candidates']):
+            question += f"({chr(ord('A') + idx)}) {c}\n"
+            if c == answer:
+                answer_idx = idx
+        question = question.rstrip()
+        question = question + "Only give the best option.\n"
+        answer = f"({chr(ord('A') + answer_idx)}) {answer}"
+        return question, answer
+
 
 def test():
     import json
