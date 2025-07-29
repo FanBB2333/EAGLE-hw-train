@@ -35,9 +35,6 @@ except ImportError:
     eval_logger.error("Please add a symbolic link pointing to the eagle folder of repo ")
     raise ImportError("omg")
 
-from eval.dataset.pointllm import PointLLMDataset
-from eval.utils import DEFAULT_POINT_TOKEN
-
 from fzy.ds import ActivityNetCaps, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2, MVBench
 handle_stuck = False
 
