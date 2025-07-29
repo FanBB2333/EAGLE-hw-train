@@ -41,6 +41,36 @@ from eval.utils import DEFAULT_POINT_TOKEN
 from fzy.ds import ActivityNetCaps, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2, MVBench
 handle_stuck = False
 
+# Available tasks
+AVAILABLE_TASKS = ["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2", "mvbench"]
+
+def validate_tasks(task_string):
+    """Validate and parse task string into a list of valid tasks."""
+    tasks = [task.strip() for task in task_string.split(',')]
+    invalid_tasks = [task for task in tasks if task not in AVAILABLE_TASKS]
+    if invalid_tasks:
+        raise ValueError(f"Invalid task(s): {invalid_tasks}. Available tasks: {AVAILABLE_TASKS}")
+    return tasks
+
+def get_dataset(task):
+    """Initialize dataset according to task name."""
+    if task == "activitynet":
+        return ActivityNetCaps()
+    elif task == "breakfast":
+        return Breakfast()
+    elif task == "charades":
+        return Charades()
+    elif task == "qvhighlights":
+        return QVHighlights()
+    elif task == "valor":
+        return VALOR32K()
+    elif task == "youcook2":
+        return YouCook2()
+    elif task == "mvbench":
+        return MVBench()
+    else:
+        raise NotImplementedError(f"Task {task} not implemented")
+
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
@@ -57,8 +87,8 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument(
         "--task",
         default="charades",
-        choices=["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2", "mvbench"],
-        help="To get full list of tasks, use the command lmms-eval --tasks list",
+        help="Task name(s) to evaluate. Can be a single task or multiple tasks separated by comma. "
+             "Available tasks: activitynet, breakfast, charades, qvhighlights, valor, youcook2, mvbench",
     )
     parser.add_argument(
         "--model_args",
@@ -108,8 +138,7 @@ def parse_eval_args() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
-def gen_prompt(data, args):
-    task = args.task
+def gen_prompt(data, args, task):
     question2 = None
     if task == "activitynet":
         duration = data["duration"]
@@ -193,7 +222,7 @@ def get_image_tensor_timeout(data, image_processor, model, args, queue):
         
             
 @torch.no_grad()
-def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
+def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
     # accelerator = Accelerator()
     modality = 'video'
     # base_path = "/home6/fzy/repos/EAGLE/model/LLM/Llama-3.2-3B-Instruct"
@@ -247,26 +276,9 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         modality = 'video'
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
-    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {args.task}")
-    # initialize dataset according to args.task
-    task = args.task
-    if task == "activitynet":
-        ds = ActivityNetCaps()
-    elif task == "breakfast":
-        ds = Breakfast()
-    elif task == "charades":
-        ds = Charades()
-    elif task == "qvhighlights":
-        ds = QVHighlights()
-    elif task == "valor":
-        ds = VALOR32K()
-    elif task == "youcook2":
-        ds = YouCook2()
-        # handle_stuck = True
-    elif task == "mvbench":
-        ds = MVBench()
-    else:
-        raise NotImplementedError(f"Task {task} not implemented")
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {task}")
+    # initialize dataset according to task
+    ds = get_dataset(task)
     # return
     
     # time.sleep(100)
@@ -338,7 +350,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             video_grid_thw = None
             print("No video_grid_thw found, using None for video_grid_thw")
             
-        prompt_question = gen_prompt(data, args)
+        prompt_question = gen_prompt(data, args, task)
         # print(prompt_question)
         
         input_ids = tokenizer_image_token(
@@ -401,7 +413,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
 
 
 @torch.no_grad()
-def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
+def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
     accelerator = Accelerator()
     modality = 'video'
     base_path = "./model/LLM/Llama-3.2-3B-Instruct"
@@ -454,25 +466,9 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
         modality = 'video'
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
-    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {args.task}")
-    # initialize dataset according to args.task
-    task = args.task
-    if task == "activitynet":
-        ds = ActivityNetCaps()
-    elif task == "breakfast":
-        ds = Breakfast()
-    elif task == "charades":
-        ds = Charades()
-    elif task == "qvhighlights":
-        ds = QVHighlights()
-    elif task == "valor":
-        ds = VALOR32K()
-    elif task == "youcook2":
-        ds = YouCook2()
-    elif task == "mvbench":
-        ds = MVBench()
-    else:
-        raise NotImplementedError(f"Task {task} not implemented")
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {task}")
+    # initialize dataset according to task
+    ds = get_dataset(task)
     test_dataloader = ds
     accelerator.wait_for_everyone()
     with accelerator.split_between_processes(test_dataloader) as batch:
@@ -520,7 +516,7 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
             
             # prompt_question = conv.get_prompt()
             
-            prompt_question = gen_prompt(data, args)
+            prompt_question = gen_prompt(data, args, task)
             # print(prompt_question)
             # return
             input_ids = tokenizer_image_token(
@@ -588,6 +584,55 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
     if tokenizer.padding_side == "left":
         input_ids = torch.flip(input_ids, [1])
     return input_ids
+
+def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
+    """Evaluate multiple tasks sequentially."""
+    # Parse and validate tasks
+    tasks = validate_tasks(args.task)
+    
+    print(f"Evaluating tasks: {tasks}")
+    for task in tasks:
+        print(f"\n{'='*50}")
+        print(f"Starting evaluation for task: {task}")
+        print(f"{'='*50}")
+        
+        try:
+            if args.distributed:
+                evaluate_dist_single_task(args=args, task=task)
+            else:
+                evaluate_single_task(args=args, task=task)
+            print(f"✓ Completed evaluation for task: {task}")
+        except Exception as e:
+            print(f"✗ Error evaluating task {task}: {e}")
+            eval_logger.error(f"Error evaluating task {task}: {e}")
+            continue
+    
+    print(f"\n{'='*50}")
+    print("All tasks completed!")
+    print(f"{'='*50}")
+
+def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
+    """Distributed evaluation for multiple tasks."""
+    # Parse and validate tasks
+    tasks = validate_tasks(args.task)
+    
+    print(f"Evaluating tasks in distributed mode: {tasks}")
+    for task in tasks:
+        print(f"\n{'='*50}")
+        print(f"Starting distributed evaluation for task: {task}")
+        print(f"{'='*50}")
+        
+        try:
+            evaluate_dist_single_task(args=args, task=task)
+            print(f"✓ Completed distributed evaluation for task: {task}")
+        except Exception as e:
+            print(f"✗ Error in distributed evaluation for task {task}: {e}")
+            eval_logger.error(f"Error in distributed evaluation for task {task}: {e}")
+            continue
+    
+    print(f"\n{'='*50}")
+    print("All distributed tasks completed!")
+    print(f"{'='*50}")
 
 if __name__ == "__main__":
     args = parse_eval_args()

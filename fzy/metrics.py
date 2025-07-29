@@ -70,7 +70,7 @@ def load_data():
     import json
     # datasets = ["activitynet", "charades", "qvhighlights", "youcook2"]
     # datasets = ["activitynet", "charades", "qvhighlights", "youcook2"]
-    datasets = ["youcook2"]
+    datasets = ["mvbench"]
     # datasets = ["activitynet", "charades", "qvhighlights", "valor", "breakfast", "youcook2"]
     # datasets = ["activitynet", "charades", "qvhighlights", "valor", "youcook2"]
     # ds2json = lambda ds: CURRENT_PATH / "../output" /f"{ds}_output.json"
@@ -80,7 +80,11 @@ def load_data():
         ret_ds = list()
         with open(ds2json(dataset), "r") as f:
             raw = json.load(f)
-        if dataset == "breakfast":
+        if dataset == "mvbench":
+            ret_ds = raw
+            ret[dataset] = ret_ds
+            continue
+        elif dataset == "breakfast":
             for item in raw:
                 splits = item["prediction"].split(".")
                 # if len(item["segments"]) != len(splits):
@@ -132,12 +136,19 @@ def get_predictions(pred) -> float:
     
     return NONE_VALUE
     
+
+def eval_mvbench(res):
     
+    return None
+
 
 def main():
     ds = load_data()
     for ds_name, ds_data in ds.items():
         print(f"{'='*10} {ds_name} {'='*10}")
+        if ds_name == "mvbench":
+            eval_mvbench(ds_data)
+            continue
         # for each dataset, calculate the average of evaluation results
         results_all = list()
         for item in ds_data:
