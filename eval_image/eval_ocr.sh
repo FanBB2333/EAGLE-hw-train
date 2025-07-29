@@ -12,7 +12,7 @@ OUTPUT_PATH=${OUTPUT_DIR}/${DATA_NAME}.json\
 echo ${MODEL_PATH} >> ${OUTPUT_DIR}/ocr.txt
 
 
-CUDA_VISIBLE_DEVICES="4" python eval_eagle.py \
+CUDA_VISIBLE_DEVICES="4" python eval_ocrbenchv2.py \
     --model_path ${MODEL_PATH} \
     --output_path ${OUTPUT_PATH} \
     --dataset_name ${DATA_NAME} \
