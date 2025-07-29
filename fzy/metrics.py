@@ -1,4 +1,5 @@
 import numpy as np
+import re
 from pathlib import Path
 from copy import deepcopy
 CURRENT_PATH = Path(__file__).parent
@@ -138,7 +139,42 @@ def get_predictions(pred) -> float:
     
 
 def eval_mvbench(res):
-    
+    def eq(pred, gt):
+        # pred, gt = pred.lower().strip(), gt.lower().strip()
+        # if pred == gt or pred in gt or gt in pred:
+        #     return True
+        # find pred with (x)
+        if "(" in pred and ")" in pred:
+            pred_choice = pred.split("(")[1].strip()
+            if len(pred_choice) != 0:
+                pred_choice = pred_choice[0]
+            gt_choice = gt.split("(")[1][0]
+            # print(f"gt: {gt}, gt_choice: {gt_choice}")
+            if pred_choice == gt_choice or pred_choice in gt_choice or gt_choice in pred_choice:
+                # print(f"pred_choice: {pred_choice}, gt_choice: {gt_choice}")
+                return True
+        pred_splits = pred.split()
+        # filter the stop words
+        pred_splits = [ps for ps in pred_splits if ps not in ["the", "a", "an", "is", "are", "was", "were", "to", "of"]]
+        for ps in pred_splits:
+            if ps in gt or gt in ps:
+                return True
+        return False
+    # {
+    #     "task": "mvbench",
+    #     "data_path": "/home6/fzy/EAGLE/dataset/MVBench/star/Charades_segment/USNP1_1.2999999999999998_15.4.mp4",
+    #     "question": "Question: Which object was taken by the person?\nOptions:\n(A) The clothes.\n(B) The pillow.\n(C) The shoe.\n(D) The phone/camera.\nOnly give the best option and do not explain why.\n",
+    #     "answer": "(D) The phone/camera.",
+    #     "class": "object_interaction",
+    #     "prediction": "The best option is (D) The phone/camera."
+    # },
+    all_res = list()
+    for item in res:
+        # print(f"prediction: {item['prediction']}, answer: {item['answer']}")
+        all_res.append(eq(item["prediction"], item["answer"]))
+    all_res = np.array(all_res)
+    acc = np.mean(all_res)
+    print(f"mvbench acc: {acc:.4f}")
     return None
 
 
