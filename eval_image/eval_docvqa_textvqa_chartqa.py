@@ -35,7 +35,7 @@ def parse_eval_args() -> argparse.Namespace:
         # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle", 
         # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2",
         # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc",
-        default="/mnt/990ep/repos/EAGLE-hw-train/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc3",
+        default="./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc3",
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -69,7 +69,7 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_path",
-        default='/mnt/990ep/repos/EAGLE-hw-train/ocrb/res_folder/images',
+        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/images',
         type=str,
         metavar="= [dir/file.jsonl] [DIR]",
         help="The path to the output file where the result metrics will be saved. If the path is a directory and log_samples is true, the results will be saved in the directory. Else the parent directory will be used.",

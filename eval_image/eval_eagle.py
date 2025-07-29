@@ -120,11 +120,11 @@ class VQADataInput:
 class VQADataset(Dataset):
     def __init__(self, json_data_file="OCRBench_v2_new.json"):
         super().__init__()
-        # self.json_data = json.load(open('/mnt/990ep/repos/EAGLE-hw-train/ocrb/OCRBench_v2/OCRBench_v2.json'))
-        # self.json_data = json.load(open('/mnt/990ep/repos/EAGLE-hw-train/ocrb/OCRBench_v2/OCRBench_v2_new.json'))
-        json_data_path = os.path.join('/mnt/990ep/repos/EAGLE-hw-train/ocrb/OCRBench_v2', json_data_file)
+        # self.json_data = json.load(open('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2/OCRBench_v2.json'))
+        # self.json_data = json.load(open('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2/OCRBench_v2_new.json'))
+        json_data_path = os.path.join('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2', json_data_file)
         self.json_data = json.load(open(json_data_path))
-        self.img_dir = '/mnt/990ep/repos/EAGLE-hw-train/ocrb/OCRBench_v2'
+        self.img_dir = '/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2'
         self.add_prompt = True
     def __len__(self):
         return len(self.json_data)
@@ -249,7 +249,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     
     # Generate date-based output path
     current_date = datetime.now().strftime("%m%d")
-    base_output_dir = '/mnt/990ep/repos/EAGLE-hw-train/ocrb/eagle_ocr'
+    base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
     date_dir = os.path.join(base_output_dir, current_date)
     full_output_path = os.path.join(date_dir, args.output_path)
     
