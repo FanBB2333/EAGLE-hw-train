@@ -522,6 +522,7 @@ def evaluate_with_results(model_path):
         }
         
     except Exception as e:
+        raise e
         return {"error": f"Failed to evaluate DocVQA/TextVQA/ChartQA: {str(e)}"}
 
 if __name__ == "__main__":

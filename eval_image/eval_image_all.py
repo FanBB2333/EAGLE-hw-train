@@ -1,6 +1,9 @@
 import multiprocessing
 import argparse
+from pathlib import Path
 import sys
+sys.path.append(str(Path(__file__).resolve().parent))  # Add parent directory to path
+sys.path.append(str(Path(__file__).resolve().parent.parent))  # Add parent directory to path
 import os
 from pathlib import Path
 import json
@@ -11,7 +14,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run all image evaluation tasks")
     parser.add_argument(
         "--model_path", 
-        required=True,
+        default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
         help="Path to the pretrained model"
     )
     parser.add_argument(
@@ -21,7 +24,7 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", 
-        default="all",
+        default="docvqa",
         help="Datasets to evaluate. Options: 'all', 'docvqa', 'mme', 'ocrbenchv2', or comma-separated list (e.g., 'docvqa,mme')"
     )
     parser.add_argument(
@@ -37,37 +40,38 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
 def run_evaluation_internal(script_name, model_path):
     """Run evaluation internally and return results"""
-    try:
-        # Import evaluation functions dynamically when needed
-        if script_name == "eval_docvqa_textvqa_chartqa.py":
-            from eval_docvqa_textvqa_chartqa import evaluate_with_results
-        elif script_name == "eval_mme.py":
-            from eval_mme import evaluate_with_results
-        elif script_name == "eval_ocrbenchv2.py":
-            from eval_ocrbenchv2 import evaluate_with_results
-        else:
-            return {
-                'script': script_name,
-                'status': 'error',
-                'error': f'Unknown script: {script_name}'
-            }
-        
-        # Call the evaluation function directly
-        results = evaluate_with_results(model_path)
-        print(f"✓ {script_name} completed successfully")
-        return {
-            'script': script_name,
-            'status': 'success',
-            'results': results
-        }
-        
-    except Exception as e:
-        print(f"✗ Failed to run {script_name}: {str(e)}")
+    # try:
+    # Import evaluation functions dynamically when needed
+    if script_name == "eval_docvqa_textvqa_chartqa.py":
+        from eval_docvqa_textvqa_chartqa import evaluate_with_results
+    elif script_name == "eval_mme.py":
+        from eval_mme import evaluate_with_results
+    elif script_name == "eval_ocrbenchv2.py":
+        from eval_ocrbenchv2 import evaluate_with_results
+    else:
         return {
             'script': script_name,
             'status': 'error',
-            'error': str(e)
+            'error': f'Unknown script: {script_name}'
         }
+    
+    # Call the evaluation function directly
+    results = evaluate_with_results(model_path)
+    print(f"✓ {script_name} completed successfully")
+    return {
+        'script': script_name,
+        'status': 'success',
+        'results': results
+    }
+        
+    # except Exception as e:
+    #     print(f"✗ Failed to run {script_name}: {str(e)}")
+    #     raise e
+    #     return {
+    #         'script': script_name,
+    #         'status': 'error',
+    #         'error': str(e)
+    #     }
 
 def run_all(args):
     """Run all evaluation scripts"""
