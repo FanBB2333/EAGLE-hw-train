@@ -2,8 +2,9 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from torch.utils.data import DataLoader
+from pathlib import Path
 import sys
-sys.path.append('./')
+sys.path.append(str(Path(__file__).resolve().parent.parent)) 
 import json
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from tqdm import tqdm
 from PIL import Image
 
 eval_logger = logging.getLogger("eval_eagle")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # try:
 from eagle.model.builder import load_pretrained_model
@@ -29,14 +31,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle/checkpoint-30000", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-900",
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen25vl-batch-llava-eagle/",
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2",
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc",
-        default="/mnt/990ep/repos/EAGLE-hw-train/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc3",
+        default="/home6/fzy/repos/EAGLE/checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -146,7 +141,8 @@ class VQADataset(Dataset):
 
 
 @torch.no_grad()
-def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
+def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
+    """Run inference only and return raw predictions"""
     tokenizer, model, image_processor, max_length = load_pretrained_model(
         model_path=args.model_path,
         model_base=None,
@@ -181,7 +177,6 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         question = data.question
         answer = data.answer
 
-        # DEFAULT_POINT_TOKEN 是点云的，视频的可能需要重写，可以参考如下方式修改prompt
         if DEFAULT_IMAGE_TOKEN not in question:
             question = DEFAULT_IMAGE_TOKEN + '\n' + question
         
@@ -232,11 +227,6 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             image_grid_thw=image_grid_thw
         )
         text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
-        # print(text_outputs)
-        # except Exception as e:
-        #     eval_logger.error(f"Error {e} in generating")
-        #     cont = ""
-        #     text_outputs = [""]
         outputs.append(
             {
                 "question": question,
@@ -247,20 +237,214 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         pbar.update(1)
     pbar.close()
     
-    # Generate date-based output path
-    current_date = datetime.now().strftime("%m%d")
-    base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
-    date_dir = os.path.join(base_output_dir, current_date)
-    full_output_path = os.path.join(date_dir, args.output_path)
+    # Optionally save raw predictions as backup
+    if args.output_path:
+        # Generate date-based output path
+        current_date = datetime.now().strftime("%m%d")
+        base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+        date_dir = os.path.join(base_output_dir, current_date)
+        full_output_path = os.path.join(date_dir, args.output_path)
+        
+        # make sure the output directory exists
+        os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
+        with open(full_output_path, "w", encoding="utf-8") as f:
+            json.dump(outputs, f, ensure_ascii=False, indent=4)
+        
+        print("Raw predictions saved at", full_output_path)
     
-    # make sure the output directory exists
-    os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
-    with open(full_output_path, "w", encoding="utf-8") as f:
-        json.dump(outputs, f, ensure_ascii=False, indent=4)
-    # with open(args.output_path, 'w') as output_file:
-    #     json.dump(outputs, output_file)
+    print("Inference completed for OCRBench v2!")
+    return {"ocrbenchv2": outputs}
+
+
+def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Evaluate predictions using the OCRBench v2 evaluation pipeline"""
+    # Get predictions from inference_results or load from file
+    if inference_results is not None and "ocrbenchv2" in inference_results:
+        outputs = inference_results["ocrbenchv2"]
+        print("Processing OCRBench v2 predictions from inference results...")
+    else:
+        # Fallback to reading from file
+        if args.output_path:
+            current_date = datetime.now().strftime("%m%d")
+            base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+            date_dir = os.path.join(base_output_dir, current_date)
+            full_output_path = os.path.join(date_dir, args.output_path)
+            
+            if os.path.exists(full_output_path):
+                with open(full_output_path, "r", encoding="utf-8") as f:
+                    outputs = json.load(f)
+                print("Processing OCRBench v2 predictions from file...")
+            else:
+                print(f"OCRBench v2 prediction file not found: {full_output_path}")
+                return {}
+        else:
+            print("No inference results or output path provided")
+            return {}
     
-    print("Save at", full_output_path)
+    try:
+        # Import the get_result processing function
+        from get_result import process_predictions
+        
+        # Process predictions using get_result.py logic
+        data_names = ['all_bbox']  # Default data name for OCRBench v2
+        predict_model = 'eagle'
+        
+        # Save predictions in the expected format first
+        current_date = datetime.now().strftime("%m%d")
+        eagle_ocr_dir = f'/home6/fzy/repos/EAGLE/eval_image/eagle_ocr/{current_date}'
+        predict_file = os.path.join(eagle_ocr_dir, 'all_bbox.json')
+        
+        os.makedirs(eagle_ocr_dir, exist_ok=True)
+        with open(predict_file, "w", encoding="utf-8") as f:
+            json.dump(outputs, f, ensure_ascii=False, indent=4)
+        
+        # Process predictions
+        processed_outputs = process_predictions(
+            data_names=data_names,
+            predict_model=predict_model,
+            predict_path=predict_file,
+            raw_data=args.json_data if args.json_data else 'OCRBench_v2.json'
+        )
+        
+        # Save processed predictions for evaluation
+        pred_folder_dir = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/pred_folder'
+        os.makedirs(pred_folder_dir, exist_ok=True)
+        processed_pred_file = os.path.join(pred_folder_dir, f'vqa_{predict_model}.json')
+        
+        with open(processed_pred_file, "w", encoding="utf-8") as f:
+            json.dump(processed_outputs, f, ensure_ascii=False, indent=4)
+        
+        print(f"Processed predictions saved to {processed_pred_file}")
+        
+        # Run OCRBench v2 evaluation script
+        import subprocess
+        import sys
+        
+        eval_script = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/eval.py'
+        eval_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eval_ocrbench'
+        os.makedirs(eval_output_dir, exist_ok=True)
+        eval_output_file = os.path.join(eval_output_dir, f'{predict_model}.json')
+        
+        # Run evaluation
+        eval_cmd = [
+            sys.executable, eval_script,
+            '--input_path', processed_pred_file,
+            '--output_path', eval_output_file
+        ]
+        
+        print(f"Running OCRBench v2 evaluation: {' '.join(eval_cmd)}")
+        result = subprocess.run(eval_cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"Evaluation script failed: {result.stderr}")
+            return {
+                "error": f"Evaluation script failed: {result.stderr}",
+                "processed_predictions": len(processed_outputs),
+                "total_predictions": len(outputs)
+            }
+        
+        # Run score calculation
+        score_script = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/get_score.py'
+        score_cmd = [
+            sys.executable, score_script,
+            '--json_file', eval_output_file
+        ]
+        
+        print(f"Running OCRBench v2 score calculation: {' '.join(score_cmd)}")
+        score_result = subprocess.run(score_cmd, capture_output=True, text=True)
+        
+        if score_result.returncode != 0:
+            print(f"Score calculation failed: {score_result.stderr}")
+        
+        # Try to extract scores from the output
+        score_output = score_result.stdout
+        print("OCRBench v2 Evaluation Results:")
+        print(score_output)
+        
+        # Parse scores from output (this is a simplified version)
+        evaluation_results = {
+            "processed_predictions": len(processed_outputs),
+            "total_predictions": len(outputs),
+            "evaluation_output": score_output,
+            "eval_output_file": eval_output_file,
+            "processed_pred_file": processed_pred_file
+        }
+        
+        # Try to read the evaluation results file if it exists
+        if os.path.exists(eval_output_file):
+            with open(eval_output_file, "r", encoding="utf-8") as f:
+                eval_data = json.load(f)
+            evaluation_results["detailed_results"] = eval_data
+            evaluation_results["total_evaluated"] = len(eval_data)
+        
+        return evaluation_results
+        
+    except ImportError as e:
+        print(f"Warning: Could not import OCRBench v2 processing modules: {e}")
+        print("Falling back to basic statistics...")
+        return {
+            "total_predictions": len(outputs),
+            "error": f"Import error: {e}"
+        }
+    except Exception as e:
+        print(f"Error during OCRBench v2 evaluation: {e}")
+        return {
+            "total_predictions": len(outputs),
+            "error": str(e)
+        }
+
+
+def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Parse and summarize OCRBench v2 evaluation results"""
+    if evaluation_results is not None:
+        # Use the passed evaluation results
+        results = evaluation_results
+        print("Parsing OCRBench v2 results from evaluation results...")
+    else:
+        # This is mainly for backward compatibility
+        print("Warning: No evaluation results passed, this may indicate an incomplete evaluation flow")
+        return {}
+    
+    # Extract summary information
+    summary = {}
+    if "total_predictions" in results:
+        summary["total_predictions"] = results["total_predictions"]
+    if "processed_predictions" in results:
+        summary["processed_predictions"] = results["processed_predictions"]
+    if "total_evaluated" in results:
+        summary["total_evaluated"] = results["total_evaluated"]
+    if "evaluation_output" in results:
+        summary["has_evaluation_output"] = True
+    if "error" in results:
+        summary["error"] = results["error"]
+    
+    # Print summary
+    print(f"OCRBench v2 Summary:")
+    if "total_predictions" in summary:
+        print(f"  - Total predictions: {summary['total_predictions']}")
+    if "processed_predictions" in summary:
+        print(f"  - Processed predictions: {summary['processed_predictions']}")
+    if "total_evaluated" in summary:
+        print(f"  - Total evaluated: {summary['total_evaluated']}")
+    if "error" in summary:
+        print(f"  - Error: {summary['error']}")
+    
+    # Optionally save summary
+    if args and args.output_path:
+        current_date = datetime.now().strftime("%m%d")
+        base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+        date_dir = os.path.join(base_output_dir, current_date)
+        os.makedirs(date_dir, exist_ok=True)
+        
+        summary_file = os.path.join(date_dir, "ocrbenchv2_evaluation_summary.json")
+        with open(summary_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "ocrbenchv2_summary": summary,
+                "detailed_results": results
+            }, f, ensure_ascii=False, indent=4)
+        print(f"OCRBench v2 summary saved to {summary_file}")
+    
+    return summary
 
 
 def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tensor:
@@ -273,41 +457,51 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 
 def evaluate_with_results(model_path):
     """
-    Run OCRBenchV2 evaluation and return results as a dictionary
+    Run OCRBench v2 evaluation and return results as a dictionary
     """
-    import argparse
+    import sys
     
-    # Create args object for internal use
-    class Args:
-        def __init__(self):
-            self.model_path = model_path
-            self.conv_mode = "vicuna_v1"
-            self.temperature = 0
-            self.top_p = None
-            self.num_beams = 1
-            self.max_new_tokens = 512
-    
-    args = Args()
+    # Temporarily modify sys.argv to pass only the model_path argument
+    original_argv = sys.argv.copy()
+    sys.argv = ['eval_ocrbenchv2.py', '--model_path', model_path]
     
     try:
-        # Run OCRBenchV2 evaluation
-        results = evaluate(args=args)
+        # Use the existing parse_eval_args function to get default parameters
+        args = parse_eval_args()
+    finally:
+        # Restore original sys.argv
+        sys.argv = original_argv
+    
+    try:
+        # Run the complete evaluation pipeline with data passing
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        results = parse_output(evaluation_results=evaluation_results, args=args)
         
         # Return structured results
-        if isinstance(results, dict):
-            return {
-                "ocrbenchv2_results": results,
-                "status": "completed"
-            }
-        else:
-            return {
-                "ocrbenchv2_results": {"score": results if results else 0},
-                "status": "completed"
-            }
+        return {
+            "ocrbenchv2": results,
+            "status": "completed"
+        }
         
     except Exception as e:
-        return {"error": f"Failed to evaluate OCRBenchV2: {str(e)}"}
+        # raise e
+        return {"error": f"Failed to evaluate OCRBench v2: {str(e)}"}
 
 if __name__ == "__main__":
     args = parse_eval_args()
-    evaluate(args=args)
+    
+    # Support different execution modes
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == '--only_inference':
+        # Only run inference and save predictions
+        inference_results = run_inference(args=args)
+    elif len(sys.argv) > 1 and sys.argv[1] == '--only_eval':
+        # Only evaluate existing predictions
+        evaluation_results = evaluate_predictions(args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
+    else:
+        # Run both inference and evaluation (default behavior)
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
