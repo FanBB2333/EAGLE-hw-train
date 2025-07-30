@@ -1,9 +1,11 @@
 import json
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"  # Set the GPU to use
 import torch
 from torch.utils.data import DataLoader
+from pathlib import Path
 import sys
-sys.path.append('./')
+sys.path.append(str(Path(__file__).resolve().parent.parent))  
 import json
 from datasets import load_dataset
 
@@ -38,7 +40,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default="./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc3",
+        default="/home6/fzy/repos/EAGLE/checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -202,10 +204,13 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
     overall_correct = 0
     overall_total = 0
     
+    # Create overall progress bar
+    total_questions = len(mmlu_dataset)
+    pbar = tqdm(total=total_questions, desc="MMLU Evaluation Progress")
+    
     for subject_name, subject_data in subjects.items():
         print(f"Running inference on {subject_name} ({len(subject_data)} questions)...")
         
-        pbar = tqdm(total=len(subject_data), desc=f"Model Inference on {subject_name}")
         subject_outputs = []
         subject_correct = 0
         
@@ -298,8 +303,6 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
             
             pbar.update(1)
         
-        pbar.close()
-        
         # Calculate subject accuracy
         subject_accuracy = subject_correct / len(subject_data) if len(subject_data) > 0 else 0
         print(f"{subject_name} Accuracy: {subject_accuracy:.4f} ({subject_correct}/{len(subject_data)})")
@@ -319,6 +322,9 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
                 "total": len(subject_data),
                 "predictions": subject_outputs
             }, f, ensure_ascii=False, indent=4)
+    
+    # Close the overall progress bar
+    pbar.close()
     
     # Calculate overall accuracy
     overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0
