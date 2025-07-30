@@ -15,19 +15,12 @@ Usage Examples:
     
     # Use custom output directory
     python eval_image_all.py --datasets mmlu --output_dir ./my_results
-    
-    # View recent results
-    python eval_image_all.py --show-results
-    
-    # Test MMLU integration
-    python eval_image_all.py --test-mmlu
 
 Features:
     - Automatic result saving with timestamps and metadata
     - Support for sequential and parallel execution
     - Detailed result formatting and summary statistics
     - Integration with multiple evaluation scripts
-    - Recent results viewing functionality
 """
 
 import os
@@ -349,81 +342,7 @@ def run_all(args):
     
     return results
 
-def test_mmlu_integration():
-    """Test MMLU evaluation integration"""
-    try:
-        from eval_mmlu import evaluate_with_results
-        print("✓ MMLU module imported successfully")
-        return True
-    except ImportError as e:
-        print(f"✗ Failed to import MMLU module: {e}")
-        return False
-    except Exception as e:
-        print(f"✗ MMLU integration test failed: {e}")
-        return False
-
-def show_recent_results(limit=5):
-    """Show the most recent evaluation results"""
-    results_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "all_evaluations"
-    
-    if not results_dir.exists():
-        print("No results directory found.")
-        return
-    
-    # Get all JSON files sorted by modification time
-    json_files = list(results_dir.glob("*.json"))
-    if not json_files:
-        print("No evaluation results found.")
-        return
-    
-    json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    
-    print(f"📊 Recent Evaluation Results (showing last {min(limit, len(json_files))}):")
-    print("-" * 80)
-    
-    for i, file_path in enumerate(json_files[:limit]):
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            metadata = data.get('metadata', {})
-            summary = data.get('summary_statistics', {})
-            
-            print(f"{i+1}. {file_path.name}")
-            print(f"   📅 Date: {metadata.get('timestamp', 'Unknown')}")
-            print(f"   🤖 Model: {metadata.get('model_name', 'Unknown')}")
-            print(f"   📊 Datasets: {metadata.get('datasets_evaluated', 'Unknown')}")
-            print(f"   ✅ Success: {metadata.get('successful_evaluations', 0)}/{metadata.get('total_evaluations', 0)}")
-            
-            if summary:
-                print(f"   📈 Key Results:")
-                for eval_name, stats in summary.items():
-                    if isinstance(stats, dict):
-                        for metric, value in stats.items():
-                            if 'accuracy' in metric.lower() and isinstance(value, (int, float)):
-                                print(f"      - {eval_name} {metric}: {value:.4f}")
-            print("-" * 40)
-            
-        except Exception as e:
-            print(f"   ❌ Error reading {file_path.name}: {e}")
-
 if __name__ == "__main__":
-    # Handle special commands
-    if len(sys.argv) > 1:
-        if '--test-mmlu' in sys.argv:
-            test_mmlu_integration()
-            sys.exit(0)
-        elif '--show-results' in sys.argv:
-            show_recent_results()
-            sys.exit(0)
-        elif '--help-extended' in sys.argv:
-            print("Extended Help:")
-            print("  --test-mmlu      Test MMLU integration")
-            print("  --show-results   Show recent evaluation results")
-            print("  --help-extended  Show this extended help")
-            sys.exit(0)
-    
     results = run_all(args)
     if results:
         print(f"\n🎉 Completed {len(results)} evaluations")
-        print("💡 Tip: Use --show-results to view recent evaluation results")
