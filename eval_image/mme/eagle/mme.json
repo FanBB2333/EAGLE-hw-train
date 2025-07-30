@@ -1435,7 +1435,7 @@
         "question": "<image>\nIs this artwork titled la finette? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "artwork"
     },
@@ -1660,7 +1660,7 @@
         "question": "<image>\nIs this artwork displayed in villa cornaro, piombino dese? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "artwork"
     },
@@ -2470,7 +2470,7 @@
         "question": "<image>\nIs this artwork created by linard, jacques? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "artwork"
     },
@@ -2848,7 +2848,7 @@
         "question": "<image>\nDoes this artwork exist in the form of illumination? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "yes"
         ],
         "category": "artwork"
     },
@@ -3541,7 +3541,7 @@
         "question": "<image>\nIs this artwork created by christus, petrus? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "artwork"
     },
@@ -4063,7 +4063,7 @@
         "question": "<image>\nIs the actor inside the red bounding box called Roger Bart? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -4396,7 +4396,7 @@
         "question": "<image>\nIs the actor inside the red bounding box called Hugh Jackman? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -4540,7 +4540,7 @@
         "question": "<image>\nIs the actor inside the red bounding box called George A. Romero? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -4702,7 +4702,7 @@
         "question": "<image>\nIs the actor inside the red bounding box named James Stewart? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -5053,7 +5053,7 @@
         "question": "<image>\nIs the actor inside the red bounding box called Abigail Van Alyn? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "celebrity"
     },
@@ -5737,7 +5737,7 @@
         "question": "<image>\nIs the person inside the red bounding box called Nicholas Rice? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "no"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -5953,7 +5953,7 @@
         "question": "<image>\nIs the person inside the red bounding box called Michael Wollet? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -6079,7 +6079,7 @@
         "question": "<image>\nIs the person inside the red bounding box called Ben Foster? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "yes"
         ],
         "category": "celebrity"
     },
@@ -6403,7 +6403,7 @@
         "question": "<image>\nIs the person inside the red bounding box named Stu Smith? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -6637,7 +6637,7 @@
         "question": "<image>\nIs the person inside the red bounding box named Renee Herlocker? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -6772,7 +6772,7 @@
         "question": "<image>\nIs the actor inside the red bounding box named Bruce Campbell? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "yes"
         ],
         "category": "celebrity"
     },
@@ -6925,7 +6925,7 @@
         "question": "<image>\nIs the person inside the red bounding box named Linda Taylor? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "celebrity"
     },
@@ -7159,7 +7159,7 @@
         "question": "<image>\nIs the answer to the arithmetic question in the image 36? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "numerical_calculation"
     },
@@ -7573,7 +7573,7 @@
         "question": "<image>\nIs it appropriate to translate the Chinese in the image into English 'hamburger and chips' in the picture? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "text_translation"
     },
@@ -7888,7 +7888,7 @@
         "question": "<image>\nAre there three laptops in the picture? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "count"
     },
@@ -7987,7 +7987,7 @@
         "question": "<image>\nAre there only two cakes in this image? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "count"
     },
@@ -8275,7 +8275,7 @@
         "question": "<image>\nAre there only three people in the image? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "count"
     },
@@ -8536,7 +8536,7 @@
         "question": "<image>\nAre there any red shoes in the image? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "color"
     },
@@ -8590,7 +8590,7 @@
         "question": "<image>\nIs there a gray wall in the image? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "color"
     },
@@ -8599,7 +8599,7 @@
         "question": "<image>\nIs there a red wall in the image? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "color"
     },
@@ -8752,7 +8752,7 @@
         "question": "<image>\nAre there any red flowers in the image? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "color"
     },
@@ -10111,7 +10111,7 @@
         "question": "<image>\nIs the dog under the pool in the image? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "position"
     },
@@ -10273,7 +10273,7 @@
         "question": "<image>\nIs the TV on the right of the bookshelf? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "position"
     },
@@ -10579,7 +10579,7 @@
         "question": "<image>\nIs the car on the left side of the fire hydrant in the picture? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "position"
     },
@@ -11038,7 +11038,7 @@
         "question": "<image>\nIs this an image of Beijing Guozijian? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -11596,7 +11596,7 @@
         "question": "<image>\nIs this an image of Burg Normannstein? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -11740,7 +11740,7 @@
         "question": "<image>\nIs this a photo of City Duma building (Saint Petersburg)? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -12316,7 +12316,7 @@
         "question": "<image>\nIs this a photo of Kaptai Lake? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -12352,7 +12352,7 @@
         "question": "<image>\nIs this a picture of Santa Caterina (Sassari)? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -12361,7 +12361,7 @@
         "question": "<image>\nIs this a picture of Former Tainan Assembly Hall? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -12460,7 +12460,7 @@
         "question": "<image>\nIs this an image of Pendeen Lighthouse? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -12559,7 +12559,7 @@
         "question": "<image>\nIs this a picture of Goldeck? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -13153,7 +13153,7 @@
         "question": "<image>\nIs this a photo of Karl-Bittel-Park? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -13432,7 +13432,7 @@
         "question": "<image>\nIs this a picture of Maribor Regional Museum? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -13468,7 +13468,7 @@
         "question": "<image>\nIs this a photo of Abbaye Notre-Dame du Val? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "landmark"
     },
@@ -14494,7 +14494,7 @@
         "question": "<image>\nIs this a picture of Church of the Merciful Saviour in Kuskovo (Moscow)? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "landmark"
     },
@@ -14908,7 +14908,7 @@
         "question": "<image>\nIs this picture captured in a place of classroom? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "scene"
     },
@@ -15232,7 +15232,7 @@
         "question": "<image>\nIs this picture captured in a place of playroom? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "scene"
     },
@@ -16717,7 +16717,7 @@
         "question": "<image>\nDoes this image describe a place of creek? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "scene"
     },
@@ -16861,7 +16861,7 @@
         "question": "<image>\nIs this picture captured in a place of driveway? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "scene"
     },
@@ -17113,7 +17113,7 @@
         "question": "<image>\nIs this photo taken in a place of stage indoor? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "scene"
     },
@@ -17338,7 +17338,7 @@
         "question": "<image>\nIs this photo taken in a place of schoolhouse? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "No"
+            "Yes"
         ],
         "category": "scene"
     },
@@ -19246,7 +19246,7 @@
         "question": "<image>\nIs this movie titled sex, lies, and videotape (1989)? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "posters"
     },
@@ -20290,7 +20290,7 @@
         "question": "<image>\nIs this movie originated from the country or region of usa? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "yes"
         ],
         "category": "posters"
     },
@@ -20344,7 +20344,7 @@
         "question": "<image>\nIs this movie originated from the country or region of usa? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "posters"
     },
@@ -20434,7 +20434,7 @@
         "question": "<image>\nIs this movie directed by quentin tarantino? Please answer yes or no.",
         "answer": "Yes",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "posters"
     },
@@ -20821,7 +20821,7 @@
         "question": "<image>\nIs this movie originated from the country or region of west germany? Please answer yes or no.",
         "answer": "No",
         "prediction": [
-            "Yes"
+            "No"
         ],
         "category": "posters"
     },
