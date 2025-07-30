@@ -32,7 +32,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default="/home6/fzy/repos/EAGLE/checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
+        default=str(PROJECT_ROOT / "checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle"),
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -126,11 +126,11 @@ class VQADataInput:
 class VQADataset(Dataset):
     def __init__(self, json_data_file="OCRBench_v2_new.json"):
         super().__init__()
-        # self.json_data = json.load(open('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2/OCRBench_v2.json'))
-        # self.json_data = json.load(open('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2/OCRBench_v2_new.json'))
-        json_data_path = os.path.join('/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2', json_data_file)
+        # self.json_data = json.load(open(str(PROJECT_ROOT / 'eval_image/OCRBench_v2/OCRBench_v2.json')))
+        # self.json_data = json.load(open(str(PROJECT_ROOT / 'eval_image/OCRBench_v2/OCRBench_v2_new.json')))
+        json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
         self.json_data = json.load(open(json_data_path))
-        self.img_dir = '/home6/fzy/repos/EAGLE/eval_image/OCRBench_v2'
+        self.img_dir = str(PROJECT_ROOT / 'eval_image/OCRBench_v2')
         self.add_prompt = True
     def __len__(self):
         return len(self.json_data)
@@ -252,7 +252,7 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
     if args.output_path:
         # Generate date-based output path
         current_date = datetime.now().strftime("%m%d")
-        base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+        base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
         date_dir = os.path.join(base_output_dir, current_date)
         # Add UUID to ensure uniqueness and prevent conflicts
         unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
@@ -281,7 +281,7 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         # Fallback to reading from file
         if args.output_path:
             current_date = datetime.now().strftime("%m%d")
-            base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+            base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
             date_dir = os.path.join(base_output_dir, current_date)
             full_output_path = os.path.join(date_dir, args.output_path)
             
@@ -306,7 +306,7 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         
         # Save predictions in the expected format first
         current_date = datetime.now().strftime("%m%d")
-        eagle_ocr_dir = f'/home6/fzy/repos/EAGLE/eval_image/eagle_ocr/{current_date}'
+        eagle_ocr_dir = str(PROJECT_ROOT / f'eval_image/eagle_ocr/{current_date}')
         # Add UUID to ensure uniqueness and prevent conflicts
         unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
         predict_file = os.path.join(eagle_ocr_dir, f'all_bbox_{unique_id}.json')
@@ -324,7 +324,7 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         )
         
         # Save processed predictions for evaluation
-        pred_folder_dir = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/pred_folder'
+        pred_folder_dir = str(PROJECT_ROOT / 'eval_image/MultimodalOCR-main/OCRBench_v2/pred_folder')
         os.makedirs(pred_folder_dir, exist_ok=True)
         # Use same unique_id for consistency
         processed_pred_file = os.path.join(pred_folder_dir, f'vqa_{predict_model}_{unique_id}.json')
@@ -338,8 +338,8 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         import subprocess
         import sys
         
-        eval_script = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/eval.py'
-        eval_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eval_ocrbench'
+        eval_script = str(PROJECT_ROOT / 'eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/eval.py')
+        eval_output_dir = str(PROJECT_ROOT / 'eval_image/eval_ocrbench')
         os.makedirs(eval_output_dir, exist_ok=True)
         # Use same unique_id for consistency
         eval_output_file = os.path.join(eval_output_dir, f'{predict_model}_{unique_id}.json')
@@ -363,7 +363,7 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
             }
         
         # Run score calculation
-        score_script = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/get_score.py'
+        score_script = str(PROJECT_ROOT / 'eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/get_score.py')
         score_cmd = [
             sys.executable, score_script,
             '--json_file', eval_output_file
@@ -451,7 +451,7 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     # Optionally save summary
     if args and args.output_path:
         current_date = datetime.now().strftime("%m%d")
-        base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
+        base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
         date_dir = os.path.join(base_output_dir, current_date)
         os.makedirs(date_dir, exist_ok=True)
         
