@@ -11,7 +11,7 @@ def write_json(path, outputs):
         json.dump(outputs, f, ensure_ascii=False, indent=4)
     print('Done')
 
-def process_predictions(data_names, predict_model, predict_path=None):
+def process_predictions(data_names, predict_model, predict_path=None, raw_data='OCRBench_v2.json'):
     """
     Process OCR predictions and merge with raw data
     
@@ -19,6 +19,7 @@ def process_predictions(data_names, predict_model, predict_path=None):
         data_names (list): List of data names to process
         predict_model (str): Model name for prediction
         predict_path (str, optional): Path to prediction file. If None, uses default logic
+        raw_data (str): Name of the JSON data file to use for evaluation
     
     Returns:
         list: List of processed outputs with predictions merged
@@ -27,8 +28,8 @@ def process_predictions(data_names, predict_model, predict_path=None):
     
     for data_name in data_names:
         # raw_path = f'OCRBench_v2/parsing_{data_name}.json'
-        raw_path = f'OCRBench_v2/OCRBench_v2.json'
-        raw_data = read_json(raw_path)
+        raw_path = f'OCRBench_v2/{raw_data}'
+        raw_data_content = read_json(raw_path)
         
         # Use provided predict_path if available, otherwise use default logic
         if predict_path:
@@ -41,7 +42,7 @@ def process_predictions(data_names, predict_model, predict_path=None):
         
         predict_data = read_json(current_predict_path)
         
-        for raw, predict in zip(raw_data, predict_data):
+        for raw, predict in zip(raw_data_content, predict_data):
             output = raw
             if predict_model == 'onellm':
                 output['predict'] = predict['predict']
@@ -59,6 +60,8 @@ if __name__ == '__main__':
                        help='Path to save the output JSON file')
     parser.add_argument('--predict_model', type=str, default='eagle',
                        help='Model name for prediction (default: eagle)')
+    parser.add_argument('--raw_data', type=str, default='OCRBench_v2.json',
+                       help='Name of the JSON data file to use for evaluation (e.g., OCRBench_v2.json)')
     
     args = parser.parse_args()
     
@@ -74,7 +77,7 @@ if __name__ == '__main__':
         output_path = f'./MultimodalOCR-main/OCRBench_v2/pred_folder/vqa_{args.predict_model}.json'
     
     # Process predictions using the extracted function
-    outputs = process_predictions(data_names, args.predict_model, args.predict_path)
+    outputs = process_predictions(data_names, args.predict_model, args.predict_path, args.raw_data)
 
     write_json(output_path, outputs)
     print(f'Output saved to {output_path}')
