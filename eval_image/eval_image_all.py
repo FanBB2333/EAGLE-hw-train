@@ -3,8 +3,8 @@ import argparse
 import sys
 import os
 from pathlib import Path
-import importlib.util
 import json
+
 
 # Parse arguments first to set environment variables early
 def parse_args():
@@ -35,37 +35,32 @@ def parse_args():
 args = parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
-CURRENT_PATH = Path(__file__).parent
-
-def load_evaluation_module(script_name):
-    """Dynamically load evaluation module"""
-    script_path = CURRENT_PATH / script_name
-    spec = importlib.util.spec_from_file_location("eval_module", script_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
 def run_evaluation_internal(script_name, model_path):
     """Run evaluation internally and return results"""
     try:
-        module = load_evaluation_module(script_name)
-        
-        # Call the evaluation function with results
-        if hasattr(module, 'evaluate_with_results'):
-            results = module.evaluate_with_results(model_path)
-            print(f"✓ {script_name} completed successfully")
-            return {
-                'script': script_name,
-                'status': 'success',
-                'results': results
-            }
+        # Import evaluation functions dynamically when needed
+        if script_name == "eval_docvqa_textvqa_chartqa.py":
+            from eval_docvqa_textvqa_chartqa import evaluate_with_results
+        elif script_name == "eval_mme.py":
+            from eval_mme import evaluate_with_results
+        elif script_name == "eval_ocrbenchv2.py":
+            from eval_ocrbenchv2 import evaluate_with_results
         else:
-            print(f"✗ {script_name} does not have evaluate_with_results function")
             return {
                 'script': script_name,
                 'status': 'error',
-                'error': 'No evaluate_with_results function found'
+                'error': f'Unknown script: {script_name}'
             }
+        
+        # Call the evaluation function directly
+        results = evaluate_with_results(model_path)
+        print(f"✓ {script_name} completed successfully")
+        return {
+            'script': script_name,
+            'status': 'success',
+            'results': results
+        }
+        
     except Exception as e:
         print(f"✗ Failed to run {script_name}: {str(e)}")
         return {
