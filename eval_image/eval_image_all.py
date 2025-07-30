@@ -1,6 +1,5 @@
 import multiprocessing
 import argparse
-import subprocess
 import sys
 import os
 from pathlib import Path
@@ -29,11 +28,6 @@ def parse_args():
         "--gpus", 
         default="0",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
-    )
-    parser.add_argument(
-        "--return_results", 
-        action="store_true",
-        help="Return evaluation results internally instead of just running scripts"
     )
     return parser.parse_args()
 
@@ -80,34 +74,6 @@ def run_evaluation_internal(script_name, model_path):
             'error': str(e)
         }
 
-def run_evaluation(script_name, model_path):
-    """Run a single evaluation script"""
-    script_path = CURRENT_PATH / script_name
-    cmd = [
-        sys.executable, 
-        str(script_path), 
-        "--model_path", model_path
-    ]
-    
-    # Prepare environment variables for subprocess
-    env = os.environ.copy()
-    env['CUDA_VISIBLE_DEVICES'] = args.gpus
-    
-    print(f"Running: {' '.join(cmd)}")
-    print(f"Environment: CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-        if result.returncode == 0:
-            print(f"✓ {script_name} completed successfully")
-            if result.stdout:
-                print(f"Output: {result.stdout}")
-        else:
-            print(f"✗ {script_name} failed with return code {result.returncode}")
-            if result.stderr:
-                print(f"Error: {result.stderr}")
-    except Exception as e:
-        print(f"✗ Failed to run {script_name}: {str(e)}")
-
 def run_all(args):
     """Run all evaluation scripts"""
     # Define mapping between dataset names and script files
@@ -139,51 +105,37 @@ def run_all(args):
     print(f"Model path: {args.model_path}")
     print(f"Datasets: {args.datasets}")
     print(f"Sequential mode: {args.sequential}")
-    print(f"Return results: {args.return_results}")
     print(f"CUDA_VISIBLE_DEVICES: {args.gpus}")
     print("-" * 50)
     
     results = []
     
-    if args.return_results:
-        # Run evaluations internally and collect results
-        if args.sequential:
-            for script in eval_scripts:
-                result = run_evaluation_internal(script, args.model_path)
-                results.append(result)
-        else:
-            # Run evaluations in parallel using multiprocessing
-            with multiprocessing.Pool() as pool:
-                tasks = [(script, args.model_path) for script in eval_scripts]
-                results = pool.starmap(run_evaluation_internal, tasks)
-        
-        # Print summary of results
-        print("-" * 50)
-        print("Evaluation Results Summary:")
-        for result in results:
-            print(f"Script: {result['script']}")
-            print(f"Status: {result['status']}")
-            if result['status'] == 'success' and 'results' in result:
-                print(f"Results: {json.dumps(result['results'], indent=2)}")
-            elif result['status'] == 'error':
-                print(f"Error: {result['error']}")
-            print("-" * 30)
-        
-        return results
+    # Run evaluations internally and collect results
+    if args.sequential:
+        for script in eval_scripts:
+            result = run_evaluation_internal(script, args.model_path)
+            results.append(result)
     else:
-        # Run evaluations as subprocesses (original behavior)
-        if args.sequential:
-            for script in eval_scripts:
-                run_evaluation(script, args.model_path)
-        else:
-            with multiprocessing.Pool() as pool:
-                tasks = [(script, args.model_path) for script in eval_scripts]
-                pool.starmap(run_evaluation, tasks)
+        # Run evaluations in parallel using multiprocessing
+        with multiprocessing.Pool() as pool:
+            tasks = [(script, args.model_path) for script in eval_scripts]
+            results = pool.starmap(run_evaluation_internal, tasks)
     
+    # Print summary of results
     print("-" * 50)
-    print("All evaluations completed!")
+    print("Evaluation Results Summary:")
+    for result in results:
+        print(f"Script: {result['script']}")
+        print(f"Status: {result['status']}")
+        if result['status'] == 'success' and 'results' in result:
+            print(f"Results: {json.dumps(result['results'], indent=2)}")
+        elif result['status'] == 'error':
+            print(f"Error: {result['error']}")
+        print("-" * 30)
+    
+    return results
 
 if __name__ == "__main__":
     results = run_all(args)
-    if args.return_results and results:
+    if results:
         print(f"\nReturned {len(results)} evaluation results")
