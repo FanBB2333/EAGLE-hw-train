@@ -1,13 +1,12 @@
+import os
 import multiprocessing
 import argparse
 from pathlib import Path
 import sys
-sys.path.append(str(Path(__file__).resolve().parent))  # Add parent directory to path
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # Add parent directory to path
-import os
 from pathlib import Path
 import json
-
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Parse arguments first to set environment variables early
 def parse_args():
@@ -20,6 +19,7 @@ def parse_args():
     parser.add_argument(
         "--sequential", 
         action="store_true",
+        default=True,
         help="Run evaluations sequentially instead of in parallel"
     )
     parser.add_argument(
@@ -29,13 +29,18 @@ def parse_args():
     )
     parser.add_argument(
         "--gpus", 
-        default="0",
+        default="3",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
     )
     return parser.parse_args()
 
 # Parse arguments and set GPU environment early
 args = parse_args()
+
+# Preprocess model_path: convert to absolute path relative to PROJECT_ROOT if not already absolute
+if not os.path.isabs(args.model_path):
+    args.model_path = str(PROJECT_ROOT / args.model_path)
+
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
 def run_evaluation_internal(script_name, model_path):
