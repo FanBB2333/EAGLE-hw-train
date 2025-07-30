@@ -1,6 +1,5 @@
 import json
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"  # Set the GPU to use
 import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
