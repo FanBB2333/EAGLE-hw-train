@@ -94,6 +94,16 @@ def parse_eval_args() -> argparse.Namespace:
         metavar="DIR",
         help="A path to a sqlite db file for caching model responses. `None` if not caching.",
     )
+    parser.add_argument(
+        "--only_inference",
+        action="store_true",
+        help="Only run inference and save predictions without evaluation",
+    )
+    parser.add_argument(
+        "--only_eval",
+        action="store_true", 
+        help="Only evaluate existing predictions without running inference",
+    )
     args = parser.parse_args()
     return args
 
@@ -491,12 +501,11 @@ def evaluate_with_results(model_path):
 if __name__ == "__main__":
     args = parse_eval_args()
     
-    # Support different execution modes
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == '--only_inference':
+    # Support different execution modes using argparse
+    if args.only_inference:
         # Only run inference and save predictions
         inference_results = run_inference(args=args)
-    elif len(sys.argv) > 1 and sys.argv[1] == '--only_eval':
+    elif args.only_eval:
         # Only evaluate existing predictions
         evaluation_results = evaluate_predictions(args=args)
         summary = parse_output(evaluation_results=evaluation_results, args=args)
