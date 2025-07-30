@@ -1,21 +1,7 @@
 import json
-
-
-scripts = '''
-CUDA_VISIBLE_DEVICES=0 llamafactory-cli eval \
---model_name_or_path /home6/fzy/repos/EAGLE/checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle \
---template llama3 \
---task mmlu_test \
---lang en \
---n_shot 5 \
---batch_size 1
-'''
-
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from torch.utils.data import DataLoader
-from accelerate import PartialState
 import sys
 sys.path.append('./')
 import json
@@ -26,13 +12,21 @@ import logging
 import re
 from typing import Union
 from tqdm import tqdm
-from PIL import Image
 
-eval_logger = logging.getLogger("eval_image")
+eval_logger = logging.getLogger("eval_mmlu")
+
+# MMLU template format
+MMLU_TEMPLATE = {
+    "en": {
+        "system": "The following are multiple choice questions (with answers) about {subject}.\n\n",
+        "choice": "\n{choice}. {content}",
+        "answer": "\nAnswer:",
+    },
+}
 
 # try:
 from eagle.model.builder import load_pretrained_model
-from eagle.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
+from eagle.mm_utils import get_model_name_from_path, tokenizer_image_token
 from eagle.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IGNORE_INDEX
 from eagle.conversation import conv_templates, SeparatorStyle
 # except ImportError:
@@ -53,9 +47,9 @@ def parse_eval_args() -> argparse.Namespace:
         help="Name of model e.g. `hf`"
     )
     parser.add_argument(
-        "--tasks",
+        "--subjects",
         default=None,
-        help="To get full list of tasks, use the command lmms-eval --tasks list",
+        help="Comma-separated list of MMLU subjects to evaluate. If None, evaluate all subjects.",
     )
     parser.add_argument(
         "--model_args",
@@ -78,10 +72,10 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_path",
-        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/text',
+        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/mmlu',
         type=str,
         metavar="= [dir/file.jsonl] [DIR]",
-        help="The path to the output file where the result metrics will be saved. If the path is a directory and log_samples is true, the results will be saved in the directory. Else the parent directory will be used.",
+        help="The path to the output file where the result metrics will be saved.",
     )
     parser.add_argument(
         "--gen_kwargs",
@@ -92,12 +86,6 @@ def parse_eval_args() -> argparse.Namespace:
         "--conv_template",
         default="llama3",
         help=("conv mode"),
-    )
-    parser.add_argument(
-        "--datasets",
-        # default="textvqa",
-        default="textvqa,docvqa,chartqa",
-        help="Comma-separated list of datasets to evaluate. Options: textvqa,docvqa,chartqa. Default: textvqa",
     )
     parser.add_argument(
         "--only_inference",
@@ -130,55 +118,49 @@ import os
 from dataclasses import dataclass
 
 
-def custom_collate_fn(batch):
-    # 假设你想做一些处理，比如将所有数据拼接到一起
-    return batch  # 修改为你自己的拼接逻辑
+def format_mmlu_question(question, choices, subject):
+    """Format MMLU question using the template"""
+    template = MMLU_TEMPLATE["en"]
+    
+    # Add system prompt with subject
+    formatted_question = template["system"].format(subject=subject.replace("_", " "))
+    
+    # Add the question
+    formatted_question += question
+    
+    # Add choices
+    choice_labels = ['A', 'B', 'C', 'D']
+    for i, choice in enumerate(choices):
+        if i < len(choice_labels):
+            formatted_question += template["choice"].format(
+                choice=choice_labels[i], 
+                content=choice
+            )
+    
+    # Add answer prompt
+    formatted_question += template["answer"]
+    
+    return formatted_question
 
-def exact_match(prediction, target):
-    """Exact string match after normalization"""
-    pred_normalized = prediction.strip().lower()
-    target_normalized = target.strip().lower()
-    return pred_normalized == target_normalized
-
-def number_match(prediction, target):
-    """Extract and match numbers from prediction and target"""
-    import re
+def evaluate_mmlu_answer(prediction, target_index):
+    """Evaluate MMLU answer prediction against target"""
+    prediction = prediction.strip().upper()
+    choice_labels = ['A', 'B', 'C', 'D']
     
-    def extract_numbers(text):
-        # Extract all numbers (including decimals) from text
-        numbers = re.findall(r'-?\d+\.?\d*', text)
-        return [float(num) for num in numbers if num]
-    
-    pred_numbers = extract_numbers(prediction)
-    target_numbers = extract_numbers(target)
-    
-    if not pred_numbers or not target_numbers:
+    # Get the target choice letter
+    if 0 <= target_index < len(choice_labels):
+        target_choice = choice_labels[target_index]
+    else:
         return False
     
-    # Check if any predicted number matches any target number
-    for pred_num in pred_numbers:
-        for target_num in target_numbers:
-            if abs(pred_num - target_num) < 1e-6:  # Allow small floating point errors
-                return True
-    return False
-
-def evaluate_answers(prediction, targets):
-    """Evaluate prediction against multiple possible answers"""
-    if not targets:
-        return False
+    # Check if prediction starts with the correct choice
+    if prediction.startswith(target_choice):
+        return True
     
-    prediction = prediction.strip()
-    
-    # Try exact match first
-    for target in targets:
-        if exact_match(prediction, target):
-            return True
-    
-    # Try number match
-    for target in targets:
-        if number_match(prediction, target):
-            return True
-    
+    # Check if prediction contains only the correct choice letter
+    if prediction == target_choice:
+        return True
+        
     return False
 
 
@@ -191,91 +173,71 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
         model_name=args.model_name
     )
     model.eval()
-    modality = 'image'
-    mmlu_test = load_dataset("cais/mmlu", "all", split="test")
+    modality = 'text'
+    
+    # Load MMLU dataset
+    mmlu_dataset = load_dataset("cais/mmlu", "all", split="test")
     # {'question': 'Find the degree for the given field extension Q(sqrt(2), sqrt(3), sqrt(18)) over Q.',
     # 'subject': 'abstract_algebra',
     # 'choices': ['0', '4', '2', '6'],
     # 'answer': 1}
-    # Process each dataset
-    for dataset_name, test_dataset in test_datasets.items():
-        print(f"Running inference on {dataset_name}...")
+    
+    # Group by subject if specific subjects are requested
+    if args.subjects:
+        selected_subjects = [s.strip() for s in args.subjects.split(',')]
+        mmlu_dataset = mmlu_dataset.filter(lambda x: x['subject'] in selected_subjects)
+    
+    # Group dataset by subject
+    subjects = {}
+    for item in mmlu_dataset:
+        subject = item['subject']
+        if subject not in subjects:
+            subjects[subject] = []
+        subjects[subject].append(item)
+    
+    print(f"Found {len(subjects)} subjects with {len(mmlu_dataset)} total questions")
+    
+    # Process each subject
+    all_outputs = []
+    overall_correct = 0
+    overall_total = 0
+    
+    for subject_name, subject_data in subjects.items():
+        print(f"Running inference on {subject_name} ({len(subject_data)} questions)...")
         
-        test_dataloader = DataLoader(
-            test_dataset,
-            collate_fn=custom_collate_fn,
-            batch_size=1
-        )
-
-        pbar = tqdm(total=len(test_dataloader), desc=f"Model Inference on {dataset_name}")
-        outputs = []
+        pbar = tqdm(total=len(subject_data), desc=f"Model Inference on {subject_name}")
+        subject_outputs = []
+        subject_correct = 0
         
-        for i, data in enumerate(test_dataloader):
-            data = data[0]
-            image = data['image']
-            image_tensor = process_images(
-                images=[image],
-                image_processor=image_processor,
-                model_cfg=model.config
-            )
-            image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
-            if hasattr(image_tensor, "image_grid_thw"):
-                image_grid_thw = image_tensor['image_grid_thw']
-                image_tensor = image_tensor['pixel_values']
-            else:
-                image_grid_thw = None
-                print("No image_grid_thw found, using None for image_grid_thw")
-            
+        for i, data in enumerate(subject_data):
             question = data['question']
+            choices = data['choices']
+            answer_index = data['answer']
+            subject = data['subject']
             
-            # Handle different answer formats for different datasets
-            if dataset_name == 'textvqa':
-                # TextVQA answers is a list of strings, filter out empty ones
-                answers = [answer.strip() for answer in data['answers'] if answer.strip()]
-                question_id = str(data['question_id'])
-            elif dataset_name == 'docvqa':
-                # DocVQA answers is a list of strings or None
-                if data['answers'] is not None and isinstance(data['answers'], list):
-                    answers = [answer.strip() for answer in data['answers'] if answer.strip()]
-                else:
-                    answers = []
-                question_id = str(data['questionId'])
-            elif dataset_name == 'chartqa':
-                # ChartQA has 'answer' field (single string)
-                answers = [data['answer'].strip()] if data['answer'] else []
-                question_id = f"{dataset_name}_{i}"
-            else:
-                answers = []
-                question_id = f"{dataset_name}_{i}"
-
-            # Add image token if not present
-            if DEFAULT_IMAGE_TOKEN not in question:
-                question = DEFAULT_IMAGE_TOKEN + '\n' + question
+            # Format the question using MMLU template
+            formatted_question = format_mmlu_question(question, choices, subject)
             
+            # Prepare conversation
             conv = conv_templates[args.conv_template].copy()
-            conv.append_message(conv.roles[0], question)
+            conv.append_message(conv.roles[0], formatted_question)
             conv.append_message(conv.roles[1], None)
             prompt_question = conv.get_prompt()
 
-            input_ids = tokenizer_image_token(
-                prompt_question, 
-                tokenizer, 
-                IMAGE_TOKEN_INDEX, 
-                return_tensors="pt"
-            )
-            pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+            # Tokenize input
+            input_ids = tokenizer(
+                prompt_question,
+                return_tensors="pt",
+                padding=False,
+                truncation=True,
+                max_length=max_length if max_length else 2048
+            ).input_ids.to(args.device)
             
-            input_ids = pad_sequence(
-                tokenizer=tokenizer,
-                input_ids=[input_ids], 
-                batch_first=True, 
-                padding_value=pad_token_ids
-            ).to(args.device)
-            attention_masks = input_ids.ne(pad_token_ids).to(args.device)
+            attention_mask = torch.ones_like(input_ids).to(args.device)
 
             gen_kwargs = {}
             if "max_new_tokens" not in gen_kwargs:
-                gen_kwargs["max_new_tokens"] = 50
+                gen_kwargs["max_new_tokens"] = 10  # Short answer for multiple choice
             if "temperature" not in gen_kwargs:
                 gen_kwargs["temperature"] = 0
             if "top_p" not in gen_kwargs:
@@ -284,20 +246,19 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
                 gen_kwargs["num_beams"] = 1
             
             try:
-                cont = model.generate(
-                    input_ids,
-                    attention_mask=attention_masks,
-                    pad_token_id=pad_token_ids,
-                    images=image_tensor,
-                    do_sample=True if gen_kwargs["temperature"] > 0 else False,
-                    temperature=gen_kwargs["temperature"],
-                    top_p=gen_kwargs["top_p"],
-                    num_beams=gen_kwargs["num_beams"],
-                    max_new_tokens=gen_kwargs["max_new_tokens"],
-                    use_cache=args.use_cache,
-                    modality=modality,
-                    image_grid_thw=image_grid_thw
-                )
+                with torch.no_grad():
+                    cont = model.generate(
+                        input_ids,
+                        attention_mask=attention_mask,
+                        pad_token_id=tokenizer.eos_token_id,
+                        do_sample=True if gen_kwargs["temperature"] > 0 else False,
+                        temperature=gen_kwargs["temperature"],
+                        top_p=gen_kwargs["top_p"],
+                        num_beams=gen_kwargs["num_beams"],
+                        max_new_tokens=gen_kwargs["max_new_tokens"],
+                        use_cache=args.use_cache,
+                        modality=modality,
+                    )
                 text_outputs = tokenizer.batch_decode(cont, skip_special_tokens=True)
                 
                 # Extract only the generated part (remove the input prompt)
@@ -305,137 +266,129 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
                 if prompt_question in prediction:
                     prediction = prediction.replace(prompt_question, "").strip()
                 
-                outputs.append({
-                    "question_id": question_id,
+                # Evaluate the answer
+                is_correct = evaluate_mmlu_answer(prediction, answer_index)
+                if is_correct:
+                    subject_correct += 1
+                    overall_correct += 1
+                
+                subject_outputs.append({
+                    "question_id": f"{subject_name}_{i}",
+                    "subject": subject_name,
                     "question": question,
-                    "answers": answers,
+                    "choices": choices,
+                    "answer_index": answer_index,
+                    "answer_choice": ['A', 'B', 'C', 'D'][answer_index] if 0 <= answer_index < 4 else "Unknown",
                     "prediction": prediction,
-                    "dataset": dataset_name
+                    "correct": is_correct
                 })
                 
             except Exception as e:
-                print(f"Error processing sample {i}: {e}")
-                outputs.append({
-                    "question_id": question_id,
+                print(f"Error processing sample {i} in {subject_name}: {e}")
+                subject_outputs.append({
+                    "question_id": f"{subject_name}_{i}",
+                    "subject": subject_name,
                     "question": question,
-                    "answers": answers,
+                    "choices": choices,
+                    "answer_index": answer_index,
+                    "answer_choice": ['A', 'B', 'C', 'D'][answer_index] if 0 <= answer_index < 4 else "Unknown",
                     "prediction": "ERROR",
-                    "dataset": dataset_name
+                    "correct": False
                 })
             
             pbar.update(1)
         
         pbar.close()
         
-        # Save raw predictions for this dataset
-        os.makedirs(args.output_path, exist_ok=True)
-        output_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "dataset": dataset_name,
-                "total": len(outputs),
-                "predictions": outputs
-            }, f, ensure_ascii=False, indent=4)
+        # Calculate subject accuracy
+        subject_accuracy = subject_correct / len(subject_data) if len(subject_data) > 0 else 0
+        print(f"{subject_name} Accuracy: {subject_accuracy:.4f} ({subject_correct}/{len(subject_data)})")
         
-        print(f"Predictions saved to {output_file}")
+        # Add to overall outputs
+        all_outputs.extend(subject_outputs)
+        overall_total += len(subject_data)
+        
+        # Save subject-specific results
+        os.makedirs(args.output_path, exist_ok=True)
+        subject_file = os.path.join(args.output_path, f"{subject_name}_results.json")
+        with open(subject_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "subject": subject_name,
+                "accuracy": subject_accuracy,
+                "correct": subject_correct,
+                "total": len(subject_data),
+                "predictions": subject_outputs
+            }, f, ensure_ascii=False, indent=4)
     
-    print("Inference completed for all datasets!")
+    # Calculate overall accuracy
+    overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0
+    print(f"Overall MMLU Accuracy: {overall_accuracy:.4f} ({overall_correct}/{overall_total})")
+    
+    # Save overall results
+    overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
+    with open(overall_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "overall_accuracy": overall_accuracy,
+            "overall_correct": overall_correct,
+            "overall_total": overall_total,
+            "subject_count": len(subjects),
+            "all_predictions": all_outputs
+        }, f, ensure_ascii=False, indent=4)
+    
+    print(f"Results saved to {args.output_path}")
+    print("Inference completed for MMLU!")
 
 
 def evaluate_predictions(args: Union[argparse.Namespace, None] = None) -> None:
     """Evaluate existing predictions and calculate metrics"""
-    # Parse datasets from args
-    selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
+    overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
     
-    for dataset_name in selected_datasets:
-        prediction_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
+    if not os.path.exists(overall_file):
+        print(f"Overall results file not found: {overall_file}")
+        return
         
-        if not os.path.exists(prediction_file):
-            print(f"Prediction file not found for {dataset_name}: {prediction_file}")
-            continue
-            
-        print(f"Evaluating predictions for {dataset_name}...")
-        
-        # Load predictions
-        with open(prediction_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
-        predictions = data["predictions"]
-        correct_count = 0
-        total_count = len(predictions)
-        
-        # Evaluate each prediction
-        evaluated_results = []
-        for pred in predictions:
-            # Skip evaluation if no ground truth answers available
-            if not pred["answers"]:
-                evaluated_results.append({
-                    **pred,
-                    "correct": None  # Mark as unevaluable
-                })
-                continue
-                
-            is_correct = evaluate_answers(pred["prediction"], pred["answers"])
-            if is_correct:
-                correct_count += 1
-            
-            evaluated_results.append({
-                **pred,
-                "correct": is_correct
-            })
-        
-        # Calculate accuracy (only count samples with ground truth)
-        evaluable_count = sum(1 for result in evaluated_results if result["correct"] is not None)
-        accuracy = correct_count / evaluable_count if evaluable_count > 0 else 0
-        print(f"{dataset_name} Accuracy: {accuracy:.4f} ({correct_count}/{evaluable_count}) [Total samples: {total_count}]")
-        
-        # Save evaluation results
-        result_file = os.path.join(args.output_path, f"{dataset_name}_results.json")
-        with open(result_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "dataset": dataset_name,
-                "accuracy": accuracy,
-                "correct": correct_count,
-                "evaluable": evaluable_count,
-                "total": total_count,
-                "results": evaluated_results
-            }, f, ensure_ascii=False, indent=4)
-        
-        print(f"Evaluation results saved to {result_file}")
+    print(f"Loading existing MMLU results...")
     
-    print("Evaluation completed for all datasets!")
+    # Load overall results
+    with open(overall_file, "r", encoding="utf-8") as f:
+        results = json.load(f)
+    
+    print(f"Overall MMLU Accuracy: {results['overall_accuracy']:.4f} ({results['overall_correct']}/{results['overall_total']})")
+    print(f"Evaluated {results['subject_count']} subjects")
+    
+    # Print subject-wise results if they exist
+    for subject_file in os.listdir(args.output_path):
+        if subject_file.endswith("_results.json") and subject_file != "mmlu_overall_results.json":
+            subject_path = os.path.join(args.output_path, subject_file)
+            with open(subject_path, "r", encoding="utf-8") as f:
+                subject_results = json.load(f)
+            print(f"{subject_results['subject']}: {subject_results['accuracy']:.4f} ({subject_results['correct']}/{subject_results['total']})")
 
 
 def parse_output(args):
-    """Parse and summarize results from all datasets"""
+    """Parse and summarize results from MMLU evaluation"""
     output_path = args.output_path
+    overall_file = os.path.join(output_path, "mmlu_overall_results.json")
     
-    # Parse datasets from args
-    selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
-    summary = {}
+    if not os.path.exists(overall_file):
+        print(f"Overall results file not found: {overall_file}")
+        return {}
     
-    for dataset_name in selected_datasets:
-        result_file = os.path.join(output_path, f"{dataset_name}_results.json")
-        if os.path.exists(result_file):
-            with open(result_file, "r", encoding="utf-8") as f:
-                results = json.load(f)
-            
-            # Handle both old and new result format
-            evaluable = results.get("evaluable", results.get("total", 0))
-            
-            summary[dataset_name] = {
-                "accuracy": results["accuracy"],
-                "correct": results["correct"],
-                "evaluable": evaluable,
-                "total": results["total"]
-            }
-            
-            print(f"{dataset_name}: {results['accuracy']:.4f} ({results['correct']}/{evaluable}) [Total: {results['total']}]")
-        else:
-            print(f"Result file not found for {dataset_name}: {result_file}")
+    with open(overall_file, "r", encoding="utf-8") as f:
+        results = json.load(f)
+    
+    summary = {
+        "overall_accuracy": results["overall_accuracy"],
+        "overall_correct": results["overall_correct"],
+        "overall_total": results["overall_total"],
+        "subject_count": results["subject_count"]
+    }
+    
+    print(f"MMLU Overall: {results['overall_accuracy']:.4f} ({results['overall_correct']}/{results['overall_total']})")
+    print(f"Subjects evaluated: {results['subject_count']}")
     
     # Save summary
-    summary_file = os.path.join(output_path, "evaluation_summary.json")
+    summary_file = os.path.join(output_path, "mmlu_evaluation_summary.json")
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=4)
     
@@ -453,13 +406,13 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 
 def evaluate_with_results(model_path):
     """
-    Run evaluation and return results as a dictionary
+    Run MMLU evaluation and return results as a dictionary
     """
     import sys
     
     # Temporarily modify sys.argv to pass only the model_path argument
     original_argv = sys.argv.copy()
-    sys.argv = ['eval_docvqa_textvqa_chartqa.py', '--model_path', model_path]
+    sys.argv = ['eval_mmlu.py', '--model_path', model_path]
     
     try:
         # Use the existing parse_eval_args function to get default parameters
@@ -476,15 +429,13 @@ def evaluate_with_results(model_path):
         
         # Return structured results
         return {
-            "docvqa": results.get("docvqa", {}),
-            "textvqa": results.get("textvqa", {}), 
-            "chartqa": results.get("chartqa", {}),
+            "mmlu": results,
             "status": "completed"
         }
         
     except Exception as e:
         raise e
-        return {"error": f"Failed to evaluate DocVQA/TextVQA/ChartQA: {str(e)}"}
+        return {"error": f"Failed to evaluate MMLU: {str(e)}"}
 
 if __name__ == "__main__":
     args = parse_eval_args()
