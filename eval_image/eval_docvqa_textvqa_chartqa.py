@@ -204,8 +204,8 @@ def evaluate_answers(prediction, targets):
 
 
 @torch.no_grad()
-def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
-    """Run inference only and save raw predictions"""
+def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
+    """Run inference only and return raw predictions"""
     tokenizer, model, image_processor, max_length = load_pretrained_model(
         model_path=args.model_path,
         model_base=None,
@@ -234,7 +234,10 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
     
     if not test_datasets:
         print("No valid datasets selected. Exiting.")
-        return
+        return {}
+    
+    # Collect all results
+    all_results = {}
     
     # Process each dataset
     for dataset_name, test_dataset in test_datasets.items():
@@ -366,38 +369,51 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
         
         pbar.close()
         
-        # Save raw predictions for this dataset
-        os.makedirs(args.output_path, exist_ok=True)
-        output_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "dataset": dataset_name,
-                "total": len(outputs),
-                "predictions": outputs
-            }, f, ensure_ascii=False, indent=4)
+        # Store results for this dataset
+        all_results[dataset_name] = {
+            "dataset": dataset_name,
+            "total": len(outputs),
+            "predictions": outputs
+        }
         
-        print(f"Predictions saved to {output_file}")
+        # Optionally save raw predictions for this dataset as backup
+        if args.output_path:
+            os.makedirs(args.output_path, exist_ok=True)
+            output_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(all_results[dataset_name], f, ensure_ascii=False, indent=4)
+            
+            print(f"Predictions saved to {output_file}")
     
     print("Inference completed for all datasets!")
+    return all_results
 
 
-def evaluate_predictions(args: Union[argparse.Namespace, None] = None) -> None:
-    """Evaluate existing predictions and calculate metrics"""
+def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Evaluate predictions and calculate metrics"""
     # Parse datasets from args
     selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
+    all_evaluation_results = {}
     
     for dataset_name in selected_datasets:
-        prediction_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
-        
-        if not os.path.exists(prediction_file):
-            print(f"Prediction file not found for {dataset_name}: {prediction_file}")
-            continue
+        # Use inference_results if provided, otherwise load from file
+        if inference_results is not None and dataset_name in inference_results:
+            # Use the passed inference results
+            data = inference_results[dataset_name]
+            print(f"Evaluating predictions for {dataset_name} from inference results...")
+        else:
+            # Fallback to reading from file
+            prediction_file = os.path.join(args.output_path, f"{dataset_name}_predictions.json")
             
-        print(f"Evaluating predictions for {dataset_name}...")
-        
-        # Load predictions
-        with open(prediction_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            if not os.path.exists(prediction_file):
+                print(f"Prediction file not found for {dataset_name}: {prediction_file}")
+                continue
+                
+            print(f"Evaluating predictions for {dataset_name} from file...")
+            
+            # Load predictions
+            with open(prediction_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
         
         predictions = data["predictions"]
         correct_count = 0
@@ -428,57 +444,77 @@ def evaluate_predictions(args: Union[argparse.Namespace, None] = None) -> None:
         accuracy = correct_count / evaluable_count if evaluable_count > 0 else 0
         print(f"{dataset_name} Accuracy: {accuracy:.4f} ({correct_count}/{evaluable_count}) [Total samples: {total_count}]")
         
-        # Save evaluation results
-        result_file = os.path.join(args.output_path, f"{dataset_name}_results.json")
-        with open(result_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "dataset": dataset_name,
-                "accuracy": accuracy,
-                "correct": correct_count,
-                "evaluable": evaluable_count,
-                "total": total_count,
-                "results": evaluated_results
-            }, f, ensure_ascii=False, indent=4)
+        # Store evaluation results
+        all_evaluation_results[dataset_name] = {
+            "dataset": dataset_name,
+            "accuracy": accuracy,
+            "correct": correct_count,
+            "evaluable": evaluable_count,
+            "total": total_count,
+            "results": evaluated_results
+        }
         
-        print(f"Evaluation results saved to {result_file}")
+        # Optionally save evaluation results as backup
+        if args.output_path:
+            os.makedirs(args.output_path, exist_ok=True)
+            result_file = os.path.join(args.output_path, f"{dataset_name}_results.json")
+            with open(result_file, "w", encoding="utf-8") as f:
+                json.dump(all_evaluation_results[dataset_name], f, ensure_ascii=False, indent=4)
+            
+            print(f"Evaluation results saved to {result_file}")
     
     print("Evaluation completed for all datasets!")
+    return all_evaluation_results
 
 
-def parse_output(args):
+def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize results from all datasets"""
-    output_path = args.output_path
-    
     # Parse datasets from args
     selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
     summary = {}
     
     for dataset_name in selected_datasets:
-        result_file = os.path.join(output_path, f"{dataset_name}_results.json")
-        if os.path.exists(result_file):
-            with open(result_file, "r", encoding="utf-8") as f:
-                results = json.load(f)
-            
-            # Handle both old and new result format
-            evaluable = results.get("evaluable", results.get("total", 0))
-            
-            summary[dataset_name] = {
-                "accuracy": results["accuracy"],
-                "correct": results["correct"],
-                "evaluable": evaluable,
-                "total": results["total"]
-            }
-            
-            print(f"{dataset_name}: {results['accuracy']:.4f} ({results['correct']}/{evaluable}) [Total: {results['total']}]")
+        # Use evaluation_results if provided, otherwise load from file
+        if evaluation_results is not None and dataset_name in evaluation_results:
+            # Use the passed evaluation results
+            results = evaluation_results[dataset_name]
+            print(f"Parsing results for {dataset_name} from evaluation results...")
         else:
-            print(f"Result file not found for {dataset_name}: {result_file}")
+            # Fallback to reading from file
+            if args.output_path:
+                result_file = os.path.join(args.output_path, f"{dataset_name}_results.json")
+                if os.path.exists(result_file):
+                    with open(result_file, "r", encoding="utf-8") as f:
+                        results = json.load(f)
+                    print(f"Parsing results for {dataset_name} from file...")
+                else:
+                    print(f"Result file not found for {dataset_name}: {result_file}")
+                    continue
+            else:
+                print(f"No evaluation results or output path provided for {dataset_name}")
+                continue
+        
+        # Handle both old and new result format
+        evaluable = results.get("evaluable", results.get("total", 0))
+        
+        summary[dataset_name] = {
+            "accuracy": results["accuracy"],
+            "correct": results["correct"],
+            "evaluable": evaluable,
+            "total": results["total"]
+        }
+        
+        print(f"{dataset_name}: {results['accuracy']:.4f} ({results['correct']}/{evaluable}) [Total: {results['total']}]")
     
-    # Save summary
-    summary_file = os.path.join(output_path, "evaluation_summary.json")
-    with open(summary_file, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=4)
+    # Optionally save summary
+    if args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        summary_file = os.path.join(args.output_path, "evaluation_summary.json")
+        with open(summary_file, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=4)
+        
+        print(f"Summary saved to {summary_file}")
     
-    print(f"Summary saved to {summary_file}")
     return summary
     
 
@@ -508,10 +544,10 @@ def evaluate_with_results(model_path):
         sys.argv = original_argv
     
     try:
-        # Run the complete evaluation pipeline
-        run_inference(args=args)
-        evaluate_predictions(args=args)
-        results = parse_output(args=args)
+        # Run the complete evaluation pipeline with data passing
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        results = parse_output(evaluation_results=evaluation_results, args=args)
         
         # Return structured results
         return {
@@ -530,13 +566,13 @@ if __name__ == "__main__":
     
     if args.only_inference:
         # Only run inference and save predictions
-        run_inference(args=args)
+        inference_results = run_inference(args=args)
     elif args.only_eval:
         # Only evaluate existing predictions
-        evaluate_predictions(args=args)
-        parse_output(args=args)
+        evaluation_results = evaluate_predictions(args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
     else:
         # Run both inference and evaluation (default behavior)
-        run_inference(args=args)
-        evaluate_predictions(args=args)
-        parse_output(args=args)
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
