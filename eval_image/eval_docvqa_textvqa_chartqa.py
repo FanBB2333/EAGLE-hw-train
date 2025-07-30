@@ -490,6 +490,43 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
         input_ids = torch.flip(input_ids, [1])
     return input_ids
 
+def evaluate_with_results(model_path):
+    """
+    Run evaluation and return results as a dictionary
+    """
+    import argparse
+    
+    # Create args object for internal use
+    class Args:
+        def __init__(self):
+            self.model_path = model_path
+            self.conv_mode = "vicuna_v1"
+            self.temperature = 0
+            self.top_p = None
+            self.num_beams = 1
+            self.max_new_tokens = 128
+            self.only_inference = False
+            self.only_eval = False
+    
+    args = Args()
+    
+    try:
+        # Run the complete evaluation pipeline
+        run_inference(args=args)
+        evaluate_predictions(args=args)
+        results = parse_output(args=args)
+        
+        # Return structured results
+        return {
+            "docvqa": results.get("docvqa", {}),
+            "textvqa": results.get("textvqa", {}), 
+            "chartqa": results.get("chartqa", {}),
+            "status": "completed"
+        }
+        
+    except Exception as e:
+        return {"error": f"Failed to evaluate DocVQA/TextVQA/ChartQA: {str(e)}"}
+
 if __name__ == "__main__":
     args = parse_eval_args()
     

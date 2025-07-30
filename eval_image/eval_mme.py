@@ -273,6 +273,44 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
         input_ids = torch.flip(input_ids, [1])
     return input_ids
 
+def evaluate_with_results(model_path):
+    """
+    Run MME evaluation and return results as a dictionary
+    """
+    import argparse
+    
+    # Create args object for internal use
+    class Args:
+        def __init__(self):
+            self.model_path = model_path
+            self.conv_mode = "vicuna_v1"
+            self.temperature = 0
+            self.top_p = None
+            self.num_beams = 1
+            self.max_new_tokens = 128
+    
+    args = Args()
+    
+    try:
+        # Run MME evaluation
+        # evaluate(args=args)
+        results = parse_output(args=args)
+        
+        # Return structured results
+        if isinstance(results, dict):
+            return {
+                "mme_results": results,
+                "status": "completed"
+            }
+        else:
+            return {
+                "mme_results": {"total_score": results if results else 0},
+                "status": "completed"
+            }
+        
+    except Exception as e:
+        return {"error": f"Failed to evaluate MME: {str(e)}"}
+
 if __name__ == "__main__":
     args = parse_eval_args()
     # evaluate(args=args)

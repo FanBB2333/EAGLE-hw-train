@@ -4,6 +4,8 @@ import subprocess
 import sys
 import os
 from pathlib import Path
+import importlib.util
+import json
 
 # Parse arguments first to set environment variables early
 def parse_args():
@@ -28,6 +30,11 @@ def parse_args():
         default="0",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
     )
+    parser.add_argument(
+        "--return_results", 
+        action="store_true",
+        help="Return evaluation results internally instead of just running scripts"
+    )
     return parser.parse_args()
 
 # Parse arguments and set GPU environment early
@@ -35,6 +42,43 @@ args = parse_args()
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
 CURRENT_PATH = Path(__file__).parent
+
+def load_evaluation_module(script_name):
+    """Dynamically load evaluation module"""
+    script_path = CURRENT_PATH / script_name
+    spec = importlib.util.spec_from_file_location("eval_module", script_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def run_evaluation_internal(script_name, model_path):
+    """Run evaluation internally and return results"""
+    try:
+        module = load_evaluation_module(script_name)
+        
+        # Call the evaluation function with results
+        if hasattr(module, 'evaluate_with_results'):
+            results = module.evaluate_with_results(model_path)
+            print(f"✓ {script_name} completed successfully")
+            return {
+                'script': script_name,
+                'status': 'success',
+                'results': results
+            }
+        else:
+            print(f"✗ {script_name} does not have evaluate_with_results function")
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': 'No evaluate_with_results function found'
+            }
+    except Exception as e:
+        print(f"✗ Failed to run {script_name}: {str(e)}")
+        return {
+            'script': script_name,
+            'status': 'error',
+            'error': str(e)
+        }
 
 def run_evaluation(script_name, model_path):
     """Run a single evaluation script"""
@@ -95,21 +139,51 @@ def run_all(args):
     print(f"Model path: {args.model_path}")
     print(f"Datasets: {args.datasets}")
     print(f"Sequential mode: {args.sequential}")
+    print(f"Return results: {args.return_results}")
     print(f"CUDA_VISIBLE_DEVICES: {args.gpus}")
     print("-" * 50)
     
-    if args.sequential:
-        # Run evaluations sequentially
-        for script in eval_scripts:
-            run_evaluation(script, args.model_path)
+    results = []
+    
+    if args.return_results:
+        # Run evaluations internally and collect results
+        if args.sequential:
+            for script in eval_scripts:
+                result = run_evaluation_internal(script, args.model_path)
+                results.append(result)
+        else:
+            # Run evaluations in parallel using multiprocessing
+            with multiprocessing.Pool() as pool:
+                tasks = [(script, args.model_path) for script in eval_scripts]
+                results = pool.starmap(run_evaluation_internal, tasks)
+        
+        # Print summary of results
+        print("-" * 50)
+        print("Evaluation Results Summary:")
+        for result in results:
+            print(f"Script: {result['script']}")
+            print(f"Status: {result['status']}")
+            if result['status'] == 'success' and 'results' in result:
+                print(f"Results: {json.dumps(result['results'], indent=2)}")
+            elif result['status'] == 'error':
+                print(f"Error: {result['error']}")
+            print("-" * 30)
+        
+        return results
     else:
-        # Run evaluations in parallel using multiprocessing
-        with multiprocessing.Pool() as pool:
-            tasks = [(script, args.model_path) for script in eval_scripts]
-            pool.starmap(run_evaluation, tasks)
+        # Run evaluations as subprocesses (original behavior)
+        if args.sequential:
+            for script in eval_scripts:
+                run_evaluation(script, args.model_path)
+        else:
+            with multiprocessing.Pool() as pool:
+                tasks = [(script, args.model_path) for script in eval_scripts]
+                pool.starmap(run_evaluation, tasks)
     
     print("-" * 50)
     print("All evaluations completed!")
 
 if __name__ == "__main__":
-    run_all(args)
+    results = run_all(args)
+    if args.return_results and results:
+        print(f"\nReturned {len(results)} evaluation results")

@@ -271,6 +271,43 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
         input_ids = torch.flip(input_ids, [1])
     return input_ids
 
+def evaluate_with_results(model_path):
+    """
+    Run OCRBenchV2 evaluation and return results as a dictionary
+    """
+    import argparse
+    
+    # Create args object for internal use
+    class Args:
+        def __init__(self):
+            self.model_path = model_path
+            self.conv_mode = "vicuna_v1"
+            self.temperature = 0
+            self.top_p = None
+            self.num_beams = 1
+            self.max_new_tokens = 512
+    
+    args = Args()
+    
+    try:
+        # Run OCRBenchV2 evaluation
+        results = evaluate(args=args)
+        
+        # Return structured results
+        if isinstance(results, dict):
+            return {
+                "ocrbenchv2_results": results,
+                "status": "completed"
+            }
+        else:
+            return {
+                "ocrbenchv2_results": {"score": results if results else 0},
+                "status": "completed"
+            }
+        
+    except Exception as e:
+        return {"error": f"Failed to evaluate OCRBenchV2: {str(e)}"}
+
 if __name__ == "__main__":
     args = parse_eval_args()
     evaluate(args=args)
