@@ -7,6 +7,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent)) 
 import json
 from datetime import datetime
+import uuid
 
 import argparse
 import logging
@@ -253,7 +254,11 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         current_date = datetime.now().strftime("%m%d")
         base_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eagle_ocr'
         date_dir = os.path.join(base_output_dir, current_date)
-        full_output_path = os.path.join(date_dir, args.output_path)
+        # Add UUID to ensure uniqueness and prevent conflicts
+        unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
+        filename, ext = os.path.splitext(args.output_path)
+        output_filename = f"{filename}_{unique_id}{ext}"
+        full_output_path = os.path.join(date_dir, output_filename)
         
         # make sure the output directory exists
         os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
@@ -302,7 +307,9 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         # Save predictions in the expected format first
         current_date = datetime.now().strftime("%m%d")
         eagle_ocr_dir = f'/home6/fzy/repos/EAGLE/eval_image/eagle_ocr/{current_date}'
-        predict_file = os.path.join(eagle_ocr_dir, 'all_bbox.json')
+        # Add UUID to ensure uniqueness and prevent conflicts
+        unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
+        predict_file = os.path.join(eagle_ocr_dir, f'all_bbox_{unique_id}.json')
         
         os.makedirs(eagle_ocr_dir, exist_ok=True)
         with open(predict_file, "w", encoding="utf-8") as f:
@@ -319,7 +326,8 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         # Save processed predictions for evaluation
         pred_folder_dir = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/pred_folder'
         os.makedirs(pred_folder_dir, exist_ok=True)
-        processed_pred_file = os.path.join(pred_folder_dir, f'vqa_{predict_model}.json')
+        # Use same unique_id for consistency
+        processed_pred_file = os.path.join(pred_folder_dir, f'vqa_{predict_model}_{unique_id}.json')
         
         with open(processed_pred_file, "w", encoding="utf-8") as f:
             json.dump(processed_outputs, f, ensure_ascii=False, indent=4)
@@ -333,7 +341,8 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         eval_script = '/home6/fzy/repos/EAGLE/eval_image/MultimodalOCR-main/OCRBench_v2/eval_scripts/eval.py'
         eval_output_dir = '/home6/fzy/repos/EAGLE/eval_image/eval_ocrbench'
         os.makedirs(eval_output_dir, exist_ok=True)
-        eval_output_file = os.path.join(eval_output_dir, f'{predict_model}.json')
+        # Use same unique_id for consistency
+        eval_output_file = os.path.join(eval_output_dir, f'{predict_model}_{unique_id}.json')
         
         # Run evaluation
         eval_cmd = [
@@ -446,7 +455,9 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
         date_dir = os.path.join(base_output_dir, current_date)
         os.makedirs(date_dir, exist_ok=True)
         
-        summary_file = os.path.join(date_dir, "ocrbenchv2_evaluation_summary.json")
+        # Add UUID to ensure uniqueness and prevent conflicts
+        unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
+        summary_file = os.path.join(date_dir, f"ocrbenchv2_evaluation_summary_{unique_id}.json")
         with open(summary_file, "w", encoding="utf-8") as f:
             json.dump({
                 "ocrbenchv2_summary": summary,
