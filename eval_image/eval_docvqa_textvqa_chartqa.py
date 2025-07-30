@@ -494,21 +494,18 @@ def evaluate_with_results(model_path):
     """
     Run evaluation and return results as a dictionary
     """
-    import argparse
+    import sys
     
-    # Create args object for internal use
-    class Args:
-        def __init__(self):
-            self.model_path = model_path
-            self.conv_mode = "vicuna_v1"
-            self.temperature = 0
-            self.top_p = None
-            self.num_beams = 1
-            self.max_new_tokens = 128
-            self.only_inference = False
-            self.only_eval = False
+    # Temporarily modify sys.argv to pass only the model_path argument
+    original_argv = sys.argv.copy()
+    sys.argv = ['eval_docvqa_textvqa_chartqa.py', '--model_path', model_path]
     
-    args = Args()
+    try:
+        # Use the existing parse_eval_args function to get default parameters
+        args = parse_eval_args()
+    finally:
+        # Restore original sys.argv
+        sys.argv = original_argv
     
     try:
         # Run the complete evaluation pipeline
