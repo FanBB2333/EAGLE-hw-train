@@ -1,11 +1,11 @@
 import json
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Set CUDA device visibility if needed
 import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))  
-import json
 from datasets import load_dataset
 
 import argparse
@@ -113,10 +113,6 @@ import torch
 from torch.utils.data import Dataset
 
 import json
-import os
-
-import os
-from dataclasses import dataclass
 
 
 def format_mmlu_question(question, choices, subject):
@@ -166,8 +162,8 @@ def evaluate_mmlu_answer(prediction, target_index):
 
 
 @torch.no_grad()
-def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
-    """Run inference only and save raw predictions"""
+def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
+    """Run inference only and return raw predictions"""
     tokenizer, model, image_processor, max_length = load_pretrained_model(
         model_path=args.model_path,
         model_base=None,
@@ -309,18 +305,6 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
         # Add to overall outputs
         all_outputs.extend(subject_outputs)
         overall_total += len(subject_data)
-        
-        # Save subject-specific results
-        os.makedirs(args.output_path, exist_ok=True)
-        subject_file = os.path.join(args.output_path, f"{subject_name}_results.json")
-        with open(subject_file, "w", encoding="utf-8") as f:
-            json.dump({
-                "subject": subject_name,
-                "accuracy": subject_accuracy,
-                "correct": subject_correct,
-                "total": len(subject_data),
-                "predictions": subject_outputs
-            }, f, ensure_ascii=False, indent=4)
     
     # Close the overall progress bar
     pbar.close()
@@ -329,58 +313,107 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> None:
     overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0
     print(f"Overall MMLU Accuracy: {overall_accuracy:.4f} ({overall_correct}/{overall_total})")
     
-    # Save overall results
-    overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
-    with open(overall_file, "w", encoding="utf-8") as f:
-        json.dump({
-            "overall_accuracy": overall_accuracy,
-            "overall_correct": overall_correct,
-            "overall_total": overall_total,
-            "subject_count": len(subjects),
-            "all_predictions": all_outputs
-        }, f, ensure_ascii=False, indent=4)
+    # Prepare results dictionary
+    results = {
+        "overall_accuracy": overall_accuracy,
+        "overall_correct": overall_correct,
+        "overall_total": overall_total,
+        "subject_count": len(subjects),
+        "all_predictions": all_outputs,
+        "subject_results": {}
+    }
     
-    print(f"Results saved to {args.output_path}")
-    print("Inference completed for MMLU!")
-
-
-def evaluate_predictions(args: Union[argparse.Namespace, None] = None) -> None:
-    """Evaluate existing predictions and calculate metrics"""
-    overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
-    
-    if not os.path.exists(overall_file):
-        print(f"Overall results file not found: {overall_file}")
-        return
+    # Add subject-specific results
+    for subject_name, subject_data in subjects.items():
+        subject_outputs = [output for output in all_outputs if output["subject"] == subject_name]
+        subject_correct = sum(1 for output in subject_outputs if output["correct"])
+        subject_accuracy = subject_correct / len(subject_data) if len(subject_data) > 0 else 0
         
-    print(f"Loading existing MMLU results...")
+        results["subject_results"][subject_name] = {
+            "accuracy": subject_accuracy,
+            "correct": subject_correct,
+            "total": len(subject_data),
+            "predictions": subject_outputs
+        }
     
-    # Load overall results
-    with open(overall_file, "r", encoding="utf-8") as f:
-        results = json.load(f)
+    # Optionally save results to files for backup
+    if args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
+        with open(overall_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=4)
+        
+        # Save subject-specific results
+        for subject_name, subject_result in results["subject_results"].items():
+            subject_file = os.path.join(args.output_path, f"{subject_name}_results.json")
+            with open(subject_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "subject": subject_name,
+                    **subject_result
+                }, f, ensure_ascii=False, indent=4)
+        
+        print(f"Results saved to {args.output_path}")
+    
+    print("Inference completed for MMLU!")
+    return results
+
+
+def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Evaluate predictions and calculate metrics"""
+    if inference_results is not None:
+        # Use the passed inference results
+        results = inference_results
+        print(f"Evaluating MMLU results from inference...")
+    else:
+        # Fallback to reading from file (for backward compatibility)
+        overall_file = os.path.join(args.output_path, "mmlu_overall_results.json")
+        
+        if not os.path.exists(overall_file):
+            print(f"Overall results file not found: {overall_file}")
+            return {}
+            
+        print(f"Loading existing MMLU results...")
+        
+        # Load overall results
+        with open(overall_file, "r", encoding="utf-8") as f:
+            results = json.load(f)
     
     print(f"Overall MMLU Accuracy: {results['overall_accuracy']:.4f} ({results['overall_correct']}/{results['overall_total']})")
     print(f"Evaluated {results['subject_count']} subjects")
     
-    # Print subject-wise results if they exist
-    for subject_file in os.listdir(args.output_path):
-        if subject_file.endswith("_results.json") and subject_file != "mmlu_overall_results.json":
-            subject_path = os.path.join(args.output_path, subject_file)
-            with open(subject_path, "r", encoding="utf-8") as f:
-                subject_results = json.load(f)
-            print(f"{subject_results['subject']}: {subject_results['accuracy']:.4f} ({subject_results['correct']}/{subject_results['total']})")
+    # Print subject-wise results
+    if "subject_results" in results:
+        for subject_name, subject_result in results["subject_results"].items():
+            print(f"{subject_name}: {subject_result['accuracy']:.4f} ({subject_result['correct']}/{subject_result['total']})")
+    else:
+        # Fallback for old format or file-based results
+        if args and args.output_path and os.path.exists(args.output_path):
+            for subject_file in os.listdir(args.output_path):
+                if subject_file.endswith("_results.json") and subject_file != "mmlu_overall_results.json":
+                    subject_path = os.path.join(args.output_path, subject_file)
+                    with open(subject_path, "r", encoding="utf-8") as f:
+                        subject_results = json.load(f)
+                    print(f"{subject_results['subject']}: {subject_results['accuracy']:.4f} ({subject_results['correct']}/{subject_results['total']})")
+    
+    return results
 
 
-def parse_output(args):
+def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize results from MMLU evaluation"""
-    output_path = args.output_path
-    overall_file = os.path.join(output_path, "mmlu_overall_results.json")
-    
-    if not os.path.exists(overall_file):
-        print(f"Overall results file not found: {overall_file}")
-        return {}
-    
-    with open(overall_file, "r", encoding="utf-8") as f:
-        results = json.load(f)
+    if evaluation_results is not None:
+        # Use the passed evaluation results
+        results = evaluation_results
+    else:
+        # Fallback to reading from file (for backward compatibility)
+        output_path = args.output_path
+        overall_file = os.path.join(output_path, "mmlu_overall_results.json")
+        
+        if not os.path.exists(overall_file):
+            print(f"Overall results file not found: {overall_file}")
+            return {}
+        
+        with open(overall_file, "r", encoding="utf-8") as f:
+            results = json.load(f)
     
     summary = {
         "overall_accuracy": results["overall_accuracy"],
@@ -392,12 +425,14 @@ def parse_output(args):
     print(f"MMLU Overall: {results['overall_accuracy']:.4f} ({results['overall_correct']}/{results['overall_total']})")
     print(f"Subjects evaluated: {results['subject_count']}")
     
-    # Save summary
-    summary_file = os.path.join(output_path, "mmlu_evaluation_summary.json")
-    with open(summary_file, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=4)
+    # Save summary if output path is provided
+    if args and args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        summary_file = os.path.join(args.output_path, "mmlu_evaluation_summary.json")
+        with open(summary_file, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=4)
+        print(f"Summary saved to {summary_file}")
     
-    print(f"Summary saved to {summary_file}")
     return summary
     
 
@@ -427,14 +462,14 @@ def evaluate_with_results(model_path):
         sys.argv = original_argv
     
     try:
-        # Run the complete evaluation pipeline
-        run_inference(args=args)
-        evaluate_predictions(args=args)
-        results = parse_output(args=args)
+        # Run the complete evaluation pipeline with data passing
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
         
         # Return structured results
         return {
-            "mmlu": results,
+            "mmlu": summary,
             "status": "completed"
         }
         
@@ -447,13 +482,13 @@ if __name__ == "__main__":
     
     if args.only_inference:
         # Only run inference and save predictions
-        run_inference(args=args)
+        inference_results = run_inference(args=args)
     elif args.only_eval:
         # Only evaluate existing predictions
-        evaluate_predictions(args=args)
-        parse_output(args=args)
+        evaluation_results = evaluate_predictions(args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)
     else:
         # Run both inference and evaluation (default behavior)
-        run_inference(args=args)
-        evaluate_predictions(args=args)
-        parse_output(args=args)
+        inference_results = run_inference(args=args)
+        evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
+        summary = parse_output(evaluation_results=evaluation_results, args=args)

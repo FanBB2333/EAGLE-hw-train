@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument(
         "--datasets", 
         default="docvqa",
-        help="Datasets to evaluate. Options: 'all', 'docvqa', 'mme', 'ocrbenchv2', or comma-separated list (e.g., 'docvqa,mme')"
+        help="Datasets to evaluate. Options: 'all', 'docvqa', 'mme', 'ocrbenchv2', 'mmlu', or comma-separated list (e.g., 'docvqa,mme')"
     )
     parser.add_argument(
         "--gpus", 
@@ -53,6 +53,8 @@ def run_evaluation_internal(script_name, model_path):
         from eval_mme import evaluate_with_results
     elif script_name == "eval_ocrbenchv2.py":
         from eval_ocrbenchv2 import evaluate_with_results
+    elif script_name == "eval_mmlu.py":
+        from eval_mmlu import evaluate_with_results
     else:
         return {
             'script': script_name,
@@ -85,6 +87,7 @@ def run_all(args):
         "docvqa": "eval_docvqa_textvqa_chartqa.py",
         "mme": "eval_mme.py", 
         "ocrbenchv2": "eval_ocrbenchv2.py",
+        "mmlu": "eval_mmlu.py",
     }
     
     eval_scripts = []
