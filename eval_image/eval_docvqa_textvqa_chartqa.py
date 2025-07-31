@@ -542,15 +542,20 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
         input_ids = torch.flip(input_ids, [1])
     return input_ids
 
-def evaluate_with_results(model_path):
+def evaluate_with_results(model_path, datasets="textvqa,docvqa,chartqa"):
     """
     Run evaluation and return results as a dictionary
+    
+    Args:
+        model_path (str): Path to the model checkpoint
+        datasets (str): Comma-separated list of datasets to evaluate. 
+                       Options: textvqa,docvqa,chartqa. Default: "textvqa,docvqa,chartqa"
     """
     import sys
     
-    # Temporarily modify sys.argv to pass only the model_path argument
+    # Temporarily modify sys.argv to pass the model_path and datasets arguments
     original_argv = sys.argv.copy()
-    sys.argv = ['eval_docvqa_textvqa_chartqa.py', '--model_path', model_path]
+    sys.argv = ['eval_docvqa_textvqa_chartqa.py', '--model_path', model_path, '--datasets', datasets]
     
     try:
         # Use the existing parse_eval_args function to get default parameters
