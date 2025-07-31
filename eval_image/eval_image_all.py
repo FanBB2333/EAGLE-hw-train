@@ -10,6 +10,12 @@ Usage Examples:
     # Run multiple evaluations
     python eval_image_all.py --datasets mmlu,mme,docvqa
     
+    # Run only TextVQA from the docvqa script
+    python eval_image_all.py --datasets textvqa
+    
+    # Run DocVQA and ChartQA only
+    python eval_image_all.py --datasets docvqa,chartqa
+    
     # Run all evaluations with custom model
     python eval_image_all.py --datasets all --model_path /path/to/model
     
@@ -21,6 +27,7 @@ Features:
     - Support for sequential and parallel execution
     - Detailed result formatting and summary statistics
     - Integration with multiple evaluation scripts
+    - Fine-grained dataset control for docvqa/textvqa/chartqa evaluations
 """
 
 import os
@@ -50,7 +57,7 @@ def parse_args():
     parser.add_argument(
         "--datasets", 
         default="docvqa",
-        help="Datasets to evaluate. Options: 'all', 'docvqa', 'mme', 'ocrbenchv2', 'mmlu', or comma-separated list (e.g., 'docvqa,mme')"
+        help="Datasets to evaluate. Options: 'all', 'docvqa', 'textvqa', 'chartqa', 'mme', 'ocrbenchv2', 'mmlu', or comma-separated list (e.g., 'textvqa,docvqa'). For docvqa/textvqa/chartqa, you can specify individual datasets or combinations."
     )
     parser.add_argument(
         "--gpus", 
@@ -73,7 +80,7 @@ if not os.path.isabs(args.model_path):
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
-def run_evaluation_internal(script_name, model_path):
+def run_evaluation_internal(script_name, model_path, datasets=None):
     """Run evaluation internally and return results"""
     try:
         # Import evaluation functions dynamically when needed
@@ -94,7 +101,13 @@ def run_evaluation_internal(script_name, model_path):
         
         # Call the evaluation function directly
         print(f"Starting evaluation for {script_name}...")
-        results = evaluate_with_results(model_path)
+        
+        # For docvqa_textvqa_chartqa script, pass datasets parameter if provided
+        if script_name == "eval_docvqa_textvqa_chartqa.py" and datasets:
+            results = evaluate_with_results(model_path, datasets)
+        else:
+            results = evaluate_with_results(model_path)
+        
         print(f"✓ {script_name} completed successfully")
         
         # Handle different return formats
@@ -250,30 +263,54 @@ def run_all(args):
     # Define mapping between dataset names and script files
     dataset_scripts = {
         "docvqa": "eval_docvqa_textvqa_chartqa.py",
+        "textvqa": "eval_docvqa_textvqa_chartqa.py",
+        "chartqa": "eval_docvqa_textvqa_chartqa.py",
         "mme": "eval_mme.py", 
         "ocrbenchv2": "eval_ocrbenchv2.py",
         "mmlu": "eval_mmlu.py",
     }
     
-    eval_scripts = []
+    eval_tasks = []  # List of (script, datasets_for_script) tuples
     
     # Parse datasets argument
     if args.datasets.lower() == "all":
-        eval_scripts = list(dataset_scripts.values())
+        # Add all available scripts with their respective datasets
+        eval_tasks = [
+            ("eval_docvqa_textvqa_chartqa.py", "textvqa,docvqa,chartqa"),
+            ("eval_mme.py", None),
+            ("eval_ocrbenchv2.py", None),
+            ("eval_mmlu.py", None)
+        ]
     else:
         # Parse comma-separated dataset names
         requested_datasets = [d.strip().lower() for d in args.datasets.split(",")]
+        
+        # Group datasets by their corresponding scripts
+        script_datasets = {}
         for dataset in requested_datasets:
             if dataset in dataset_scripts:
-                eval_scripts.append(dataset_scripts[dataset])
+                script = dataset_scripts[dataset]
+                if script not in script_datasets:
+                    script_datasets[script] = []
+                script_datasets[script].append(dataset)
             else:
                 print(f"Warning: Unknown dataset '{dataset}'. Available options: {', '.join(dataset_scripts.keys())}")
+        
+        # Convert to eval_tasks format
+        for script, datasets_list in script_datasets.items():
+            if script == "eval_docvqa_textvqa_chartqa.py":
+                # For docvqa/textvqa/chartqa script, pass specific datasets
+                datasets_str = ",".join(datasets_list)
+                eval_tasks.append((script, datasets_str))
+            else:
+                # For other scripts, no datasets parameter needed
+                eval_tasks.append((script, None))
     
-    if not eval_scripts:
+    if not eval_tasks:
         print("No evaluation scripts to run")
         return
     
-    print(f"Running {len(eval_scripts)} evaluation scripts...")
+    print(f"Running {len(eval_tasks)} evaluation tasks...")
     print(f"Model path: {args.model_path}")
     print(f"Datasets: {args.datasets}")
     print(f"Sequential mode: {args.sequential}")
@@ -284,13 +321,13 @@ def run_all(args):
     
     # Run evaluations internally and collect results
     if args.sequential:
-        for script in eval_scripts:
-            result = run_evaluation_internal(script, args.model_path)
+        for script, datasets in eval_tasks:
+            result = run_evaluation_internal(script, args.model_path, datasets)
             results.append(result)
     else:
         # Run evaluations in parallel using multiprocessing
         with multiprocessing.Pool() as pool:
-            tasks = [(script, args.model_path) for script in eval_scripts]
+            tasks = [(script, args.model_path, datasets) for script, datasets in eval_tasks]
             results = pool.starmap(run_evaluation_internal, tasks)
     
     # Print summary of results

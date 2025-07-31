@@ -570,13 +570,13 @@ def evaluate_with_results(model_path, datasets="textvqa,docvqa,chartqa"):
         evaluation_results = evaluate_predictions(inference_results=inference_results, args=args)
         results = parse_output(evaluation_results=evaluation_results, args=args)
         
-        # Return structured results
-        return {
-            "docvqa": results.get("docvqa", {}),
-            "textvqa": results.get("textvqa", {}), 
-            "chartqa": results.get("chartqa", {}),
-            "status": "completed"
-        }
+        # Return only the results for datasets that were actually evaluated
+        structured_results = {}
+        for dataset_name in results.keys():
+            structured_results[dataset_name] = results[dataset_name]
+        
+        structured_results["status"] = "completed"
+        return structured_results
         
     except Exception as e:
         raise e
