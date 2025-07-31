@@ -56,7 +56,7 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", 
-        default="docvqa",
+        default="all",
         help="Datasets to evaluate. Options: 'all', 'docvqa', 'textvqa', 'chartqa', 'mme', 'ocrbenchv2', 'mmlu', or comma-separated list (e.g., 'textvqa,docvqa'). For docvqa/textvqa/chartqa, you can specify individual datasets or combinations."
     )
     parser.add_argument(
