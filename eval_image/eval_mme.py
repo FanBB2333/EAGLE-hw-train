@@ -1,5 +1,6 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import sys
 import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -273,7 +274,6 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
     else:
         # Fallback to reading from file
         if args.output_path:
-            import os
             output_file = os.path.join(args.output_path, "mme.json")
             if os.path.exists(output_file):
                 with open(output_file, "r", encoding="utf-8") as f:
@@ -316,8 +316,6 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         # Calculate MME scores using the calculation script
         try:
             # Import the calculation functions using importlib
-            import sys
-            import os
             import importlib.util
             
             calculation_path = os.path.join(os.path.dirname(__file__), 'mme', 'calculation.py')
