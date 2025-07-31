@@ -454,13 +454,9 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     
     # Optionally save summary
     if args and args.output_path:
-        current_date = datetime.now().strftime("%m%d")
-        base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
-        model_dir = os.path.join(base_output_dir, model_folder_name)
-        date_dir = os.path.join(model_dir, current_date)
-        os.makedirs(date_dir, exist_ok=True)
-        
-        summary_file = os.path.join(date_dir, "ocrbenchv2_evaluation_summary.json")
+        eval_output_dir = str(PROJECT_ROOT / 'eval_image/eval_ocrbench')
+        os.makedirs(eval_output_dir, exist_ok=True)
+        summary_file = os.path.join(eval_output_dir, f'ocrbenchv2_summary_{model_folder_name}.json')
         with open(summary_file, "w", encoding="utf-8") as f:
             json.dump({
                 "ocrbenchv2_summary": summary,
