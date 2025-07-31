@@ -211,6 +211,12 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         model_base=None,
         model_name=args.model_name
     )
+    
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     model.eval()
     modality = 'image'
     
@@ -391,6 +397,11 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
 
 def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Evaluate predictions and calculate metrics"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     # Parse datasets from args
     selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
     all_evaluation_results = {}
@@ -469,6 +480,11 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
 
 def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize results from all datasets"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     # Parse datasets from args
     selected_datasets = [ds.strip() for ds in args.datasets.split(',')]
     summary = {}

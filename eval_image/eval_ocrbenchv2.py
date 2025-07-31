@@ -222,7 +222,6 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         if "num_beams" not in gen_kwargs:
             gen_kwargs["num_beams"] = 1
         # print(f"image_tensor: {image_tensor}")
-        # try:
         cont = model.generate(
             input_ids,
             attention_mask=attention_masks,
