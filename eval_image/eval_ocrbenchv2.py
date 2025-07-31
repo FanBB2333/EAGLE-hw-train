@@ -257,7 +257,14 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
         model_dir = os.path.join(base_output_dir, model_folder_name)
         date_dir = os.path.join(model_dir, current_date)
-        full_output_path = os.path.join(date_dir, args.output_path)
+        
+        # Check if args.output_path is a directory or file
+        if os.path.isdir(args.output_path) or args.output_path.endswith('/'):
+            # If it's a directory, append a default filename
+            full_output_path = os.path.join(date_dir, "predictions.json")
+        else:
+            # If it's a file path, use the basename
+            full_output_path = os.path.join(date_dir, os.path.basename(args.output_path))
         
         # make sure the output directory exists
         os.makedirs(os.path.dirname(full_output_path), exist_ok=True)
@@ -289,12 +296,21 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
                 base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
                 model_dir = os.path.join(base_output_dir, model_folder_name)
                 date_dir = os.path.join(model_dir, current_date)
-                full_output_path = os.path.join(date_dir, args.output_path)
+                
+                # Check if args.output_path is a directory or file
+                if os.path.isdir(args.output_path):
+                    # If it's a directory, append a default filename
+                    full_output_path = os.path.join(date_dir, "predictions.json")
+                else:
+                    full_output_path = os.path.join(date_dir, os.path.basename(args.output_path))
             else:
                 # Use output_path directly if it already contains model folder
                 full_output_path = args.output_path
+                # If the final path is still a directory, append default filename
+                if os.path.isdir(full_output_path):
+                    full_output_path = os.path.join(full_output_path, "predictions.json")
             
-            if os.path.exists(full_output_path):
+            if os.path.exists(full_output_path) and os.path.isfile(full_output_path):
                 with open(full_output_path, "r", encoding="utf-8") as f:
                     outputs = json.load(f)
                 print("Processing OCRBench v2 predictions from file...")
