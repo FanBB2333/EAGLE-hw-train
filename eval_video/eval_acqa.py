@@ -269,6 +269,37 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     #     json.dump(outputs, output_file)
     
     print("Save at", output_file)
+    
+    # Calculate and return results for integration with eval_video_all.py
+    total_questions = len(outputs)
+    valid_predictions = len([o for o in outputs if o['prediction'] and len(o['prediction']) > 0])
+    
+    return {
+        'status': 'completed',
+        'total_questions': total_questions,
+        'valid_predictions': valid_predictions,
+        'output_file': output_file,
+        'sample_predictions': outputs[:5]  # Return first 5 samples for inspection
+    }
+
+
+def evaluate_with_results(model_path, datasets=None):
+    """
+    Wrapper function for compatibility with eval_video_all.py
+    """
+    import argparse
+    
+    # Create mock args object
+    args = argparse.Namespace()
+    args.model_path = model_path
+    args.model_name = "eagle"
+    args.device = "cuda"
+    args.output_path = '/home6/fzy/repos/EAGLE/eval_video/res_folder/videos'
+    args.conv_template = "llama3"
+    args.use_cache = None
+    
+    # Call the main evaluate function
+    return evaluate(args)
 
 
 def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tensor:

@@ -1,0 +1,372 @@
+"""
+Comprehensive Video Evaluation Script
+
+This script runs multiple video evaluation tasks and saves results to organized files.
+
+Usage Examples:
+    # Run ActivityNetQA evaluation only
+    python eval_video_all.py --datasets acqa
+    
+    # Run multiple evaluations (when more datasets are added)
+    python eval_video_all.py --datasets acqa,mvbench
+    
+    # Run all evaluations with custom model
+    python eval_video_all.py --datasets all --model_path /path/to/model
+    
+    # Use custom output directory
+    python eval_video_all.py --datasets acqa --output_dir ./my_results
+
+Features:
+    - Automatic result saving with timestamps and metadata
+    - Support for sequential and parallel execution
+    - Detailed result formatting and summary statistics
+    - Integration with multiple evaluation scripts
+    - Extensible framework for adding new video evaluation datasets
+"""
+
+import os
+import multiprocessing
+import argparse
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))  # Add parent directory to path
+from pathlib import Path
+import json
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Parse arguments first to set environment variables early
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run all video evaluation tasks")
+    parser.add_argument(
+        "--model_path", 
+        default="./checkpoints/Videos/finetune-video-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
+        help="Path to the pretrained model"
+    )
+    parser.add_argument(
+        "--sequential", 
+        action="store_true",
+        default=True,
+        help="Run evaluations sequentially instead of in parallel"
+    )
+    parser.add_argument(
+        "--datasets", 
+        default="all",
+        help="Datasets to evaluate. Options: 'all', 'acqa', or comma-separated list (e.g., 'acqa,mvbench'). Current available: acqa (ActivityNetQA)"
+    )
+    parser.add_argument(
+        "--gpus", 
+        default="0",
+        help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
+    )
+    parser.add_argument(
+        "--output_dir",
+        default=None,
+        help="Custom output directory for saving results. If not specified, uses default location."
+    )
+    return parser.parse_args()
+
+# Parse arguments and set GPU environment early
+args = parse_args()
+
+# Preprocess model_path: convert to absolute path relative to PROJECT_ROOT if not already absolute
+if not os.path.isabs(args.model_path):
+    args.model_path = str(PROJECT_ROOT / args.model_path)
+
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+
+def run_evaluation_internal(script_name, model_path, datasets=None):
+    """Run evaluation internally and return results"""
+    try:
+        # Import evaluation functions dynamically when needed
+        if script_name == "eval_acqa.py":
+            from eval_acqa import evaluate_with_results
+        # Add more evaluation scripts here as they become available
+        # elif script_name == "eval_mvbench.py":
+        #     from eval_mvbench import evaluate_with_results
+        else:
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': f'Unknown script: {script_name}'
+            }
+        
+        # Call the evaluation function directly
+        print(f"Starting evaluation for {script_name}...")
+        
+        # Call the evaluation function
+        results = evaluate_with_results(model_path, datasets)
+        
+        print(f"✓ {script_name} completed successfully")
+        
+        # Handle different return formats
+        if isinstance(results, dict):
+            if 'status' in results and results['status'] == 'completed':
+                # New format with status field
+                return {
+                    'script': script_name,
+                    'status': 'success',
+                    'results': results
+                }
+            elif 'error' in results:
+                # Error case
+                return {
+                    'script': script_name,
+                    'status': 'error',
+                    'error': results['error']
+                }
+            else:
+                # Legacy format or direct results
+                return {
+                    'script': script_name,
+                    'status': 'success',
+                    'results': results
+                }
+        else:
+            # Unexpected format
+            return {
+                'script': script_name,
+                'status': 'success',
+                'results': {'raw_output': results}
+            }
+            
+    except Exception as e:
+        print(f"✗ Failed to run {script_name}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'script': script_name,
+            'status': 'error',
+            'error': str(e)
+        }
+
+def save_results_to_file(results, args):
+    """Save evaluation results to a JSON file with metadata"""
+    import datetime
+    
+    # Create output directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos"
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate timestamp for filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name = os.path.basename(args.model_path)
+    # Truncate model name if too long
+    if len(model_name) > 30:
+        model_name = model_name[:27] + "..."
+    
+    datasets_str = args.datasets.replace(",", "_")
+    if len(datasets_str) > 20:
+        datasets_str = datasets_str[:17] + "..."
+    
+    # Create filename
+    filename = f"eval_{model_name}_{datasets_str}_{timestamp}.json"
+    output_file = output_dir / filename
+    
+    # Prepare metadata
+    metadata = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "model_path": args.model_path,
+        "model_name": model_name,
+        "datasets_evaluated": args.datasets,
+        "sequential_mode": args.sequential,
+        "gpu_devices": args.gpus,
+        "total_evaluations": len(results),
+        "successful_evaluations": len([r for r in results if r['status'] == 'success']),
+        "failed_evaluations": len([r for r in results if r['status'] == 'error'])
+    }
+    
+    # Prepare summary statistics
+    summary_stats = {}
+    for result in results:
+        if result['status'] == 'success' and 'results' in result:
+            script_name = result['script'].replace('.py', '')
+            
+            if script_name == 'eval_acqa' and isinstance(result['results'], dict):
+                # Extract ActivityNetQA specific stats
+                acqa_data = result['results']
+                summary_stats[script_name] = {
+                    "total_questions": acqa_data.get('total_questions'),
+                    "valid_predictions": acqa_data.get('valid_predictions'),
+                    "output_file": acqa_data.get('output_file')
+                }
+            elif isinstance(result['results'], dict):
+                # Extract general stats for other evaluations
+                stats = {}
+                for key, value in result['results'].items():
+                    if isinstance(value, (int, float)):
+                        stats[key] = value
+                    elif isinstance(value, dict) and 'accuracy' in str(value).lower():
+                        # Try to find accuracy metrics
+                        for sub_key, sub_value in value.items():
+                            if 'accuracy' in sub_key.lower() and isinstance(sub_value, (int, float)):
+                                stats[f"{key}_{sub_key}"] = sub_value
+                
+                if stats:
+                    summary_stats[script_name] = stats
+    
+    # Combine all data
+    output_data = {
+        "metadata": metadata,
+        "summary_statistics": summary_stats,
+        "detailed_results": results
+    }
+    
+    # Save to file
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"\n📁 Results saved to: {output_file}")
+        print(f"📊 Summary:")
+        print(f"   - Total evaluations: {metadata['total_evaluations']}")
+        print(f"   - Successful: {metadata['successful_evaluations']}")
+        print(f"   - Failed: {metadata['failed_evaluations']}")
+        print(f"   - Model: {metadata['model_name']}")
+        print(f"   - Datasets: {metadata['datasets_evaluated']}")
+        
+        # Print key metrics
+        if summary_stats:
+            print(f"\n📈 Key Metrics:")
+            for eval_name, stats in summary_stats.items():
+                print(f"   {eval_name}:")
+                for metric, value in stats.items():
+                    if isinstance(value, float) and 'accuracy' in metric.lower():
+                        print(f"     - {metric}: {value:.4f}")
+                    else:
+                        print(f"     - {metric}: {value}")
+        
+        return str(output_file)
+        
+    except Exception as e:
+        print(f"❌ Failed to save results to file: {e}")
+        return None
+
+def run_all(args):
+    """Run all evaluation scripts"""
+    # Define mapping between dataset names and script files
+    dataset_scripts = {
+        "acqa": "eval_acqa.py",
+        # Add more datasets here as they become available
+        # "mvbench": "eval_mvbench.py",
+        # "youcook2": "eval_youcook2.py",
+        # "charades": "eval_charades.py",
+    }
+    
+    eval_tasks = []  # List of (script, datasets_for_script) tuples
+    
+    # Parse datasets argument
+    if args.datasets.lower() == "all":
+        # Add all available scripts
+        eval_tasks = [
+            ("eval_acqa.py", None),
+            # Add more as they become available
+        ]
+    else:
+        # Parse comma-separated dataset names
+        requested_datasets = [d.strip().lower() for d in args.datasets.split(",")]
+        
+        # Group datasets by their corresponding scripts
+        script_datasets = {}
+        for dataset in requested_datasets:
+            if dataset in dataset_scripts:
+                script = dataset_scripts[dataset]
+                if script not in script_datasets:
+                    script_datasets[script] = []
+                script_datasets[script].append(dataset)
+            else:
+                print(f"Warning: Unknown dataset '{dataset}'. Available options: {', '.join(dataset_scripts.keys())}")
+        
+        # Convert to eval_tasks format
+        for script, datasets_list in script_datasets.items():
+            # For now, all scripts don't need specific dataset parameters
+            eval_tasks.append((script, None))
+    
+    if not eval_tasks:
+        print("No evaluation scripts to run")
+        return
+    
+    print(f"Running {len(eval_tasks)} evaluation tasks...")
+    print(f"Model path: {args.model_path}")
+    print(f"Datasets: {args.datasets}")
+    print(f"Sequential mode: {args.sequential}")
+    print(f"CUDA_VISIBLE_DEVICES: {args.gpus}")
+    print("-" * 50)
+    
+    results = []
+    
+    # Run evaluations internally and collect results
+    if args.sequential:
+        for script, datasets in eval_tasks:
+            result = run_evaluation_internal(script, args.model_path, datasets)
+            results.append(result)
+    else:
+        # Run evaluations in parallel using multiprocessing
+        with multiprocessing.Pool() as pool:
+            tasks = [(script, args.model_path, datasets) for script, datasets in eval_tasks]
+            results = pool.starmap(run_evaluation_internal, tasks)
+    
+    # Print summary of results
+    print("-" * 50)
+    print("Evaluation Results Summary:")
+    for result in results:
+        print(f"Script: {result['script']}")
+        print(f"Status: {result['status']}")
+        
+        if result['status'] == 'success' and 'results' in result:
+            # Handle different result formats
+            if result['script'] == 'eval_acqa.py' and isinstance(result['results'], dict):
+                # Special formatting for ActivityNetQA results
+                acqa_results = result['results']
+                print(f"ActivityNetQA Results:")
+                print(f"  Total Questions: {acqa_results.get('total_questions', 'N/A')}")
+                print(f"  Valid Predictions: {acqa_results.get('valid_predictions', 'N/A')}")
+                print(f"  Output File: {acqa_results.get('output_file', 'N/A')}")
+                
+                # Show sample predictions
+                if 'sample_predictions' in acqa_results:
+                    print(f"  Sample Predictions:")
+                    for i, sample in enumerate(acqa_results['sample_predictions'][:3]):
+                        print(f"    {i+1}. Q: {sample['question'][:100]}...")
+                        print(f"       A: {sample['answer']}")
+                        print(f"       P: {sample['prediction']}")
+            else:
+                # Default formatting for other results
+                if isinstance(result['results'], dict):
+                    # Pretty print key metrics
+                    for key, value in result['results'].items():
+                        if isinstance(value, dict):
+                            print(f"  {key}:")
+                            for sub_key, sub_value in value.items():
+                                if isinstance(sub_value, (int, float)):
+                                    if 'accuracy' in sub_key.lower():
+                                        print(f"    {sub_key}: {sub_value:.4f}")
+                                    else:
+                                        print(f"    {sub_key}: {sub_value}")
+                                else:
+                                    print(f"    {sub_key}: {sub_value}")
+                        elif isinstance(value, (int, float)):
+                            if 'accuracy' in key.lower():
+                                print(f"  {key}: {value:.4f}")
+                            else:
+                                print(f"  {key}: {value}")
+                        else:
+                            print(f"  {key}: {value}")
+                else:
+                    print(f"Results: {json.dumps(result['results'], indent=2)}")
+        elif result['status'] == 'error':
+            print(f"Error: {result['error']}")
+        print("-" * 30)
+    
+    # Save results to file
+    save_results_to_file(results, args)
+    
+    return results
+
+if __name__ == "__main__":
+    results = run_all(args)
+    if results:
+        print(f"\n🎉 Completed {len(results)} evaluations")
