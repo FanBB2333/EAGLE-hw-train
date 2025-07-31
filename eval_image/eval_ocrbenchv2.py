@@ -159,6 +159,10 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         model_base=None,
         model_name=args.model_name
     )
+    
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    
     # print(f"image processor: {type(image_processor)}")
     model.eval()
     modality = 'image'
@@ -249,10 +253,11 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
     
     # Optionally save raw predictions as backup
     if args.output_path:
-        # Generate date-based output path
+        # Generate date-based output path with model folder
         current_date = datetime.now().strftime("%m%d")
         base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
-        date_dir = os.path.join(base_output_dir, current_date)
+        model_dir = os.path.join(base_output_dir, model_folder_name)
+        date_dir = os.path.join(model_dir, current_date)
         # Add UUID to ensure uniqueness and prevent conflicts
         unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
         filename, ext = os.path.splitext(args.output_path)
@@ -272,6 +277,9 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
 
 def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Evaluate predictions using the OCRBench v2 evaluation pipeline"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    
     # Get predictions from inference_results or load from file
     if inference_results is not None and "ocrbenchv2" in inference_results:
         outputs = inference_results["ocrbenchv2"]
@@ -281,7 +289,8 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         if args.output_path:
             current_date = datetime.now().strftime("%m%d")
             base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
-            date_dir = os.path.join(base_output_dir, current_date)
+            model_dir = os.path.join(base_output_dir, model_folder_name)
+            date_dir = os.path.join(model_dir, current_date)
             full_output_path = os.path.join(date_dir, args.output_path)
             
             if os.path.exists(full_output_path):
@@ -305,7 +314,9 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         
         # Save predictions in the expected format first
         current_date = datetime.now().strftime("%m%d")
-        eagle_ocr_dir = str(PROJECT_ROOT / f'eval_image/eagle_ocr/{current_date}')
+        base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
+        model_dir = os.path.join(base_output_dir, model_folder_name)
+        eagle_ocr_dir = os.path.join(model_dir, current_date)
         # Add UUID to ensure uniqueness and prevent conflicts
         unique_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
         predict_file = os.path.join(eagle_ocr_dir, f'all_bbox_{unique_id}.json')
@@ -414,6 +425,9 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
 
 def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize OCRBench v2 evaluation results"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    
     if evaluation_results is not None:
         # Use the passed evaluation results
         results = evaluation_results
@@ -451,7 +465,8 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     if args and args.output_path:
         current_date = datetime.now().strftime("%m%d")
         base_output_dir = str(PROJECT_ROOT / 'eval_image/eagle_ocr')
-        date_dir = os.path.join(base_output_dir, current_date)
+        model_dir = os.path.join(base_output_dir, model_folder_name)
+        date_dir = os.path.join(model_dir, current_date)
         os.makedirs(date_dir, exist_ok=True)
         
         # Add UUID to ensure uniqueness and prevent conflicts
