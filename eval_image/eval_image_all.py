@@ -102,10 +102,41 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
         # Call the evaluation function directly
         print(f"Starting evaluation for {script_name}...")
         
+        # Create dataset-specific output directory for this evaluation
+        model_name = os.path.basename(model_path.rstrip('/'))
+        base_output_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "images" / model_name
+        
+        # Determine dataset name for directory creation
+        if script_name == "eval_docvqa_textvqa_chartqa.py":
+            if datasets:
+                dataset_dir_name = datasets.replace(',', '_')
+            else:
+                dataset_dir_name = "textvqa_docvqa_chartqa"
+        elif script_name == "eval_mme.py":
+            dataset_dir_name = "mme"
+        elif script_name == "eval_ocrbenchv2.py":
+            dataset_dir_name = "ocrbenchv2"
+        elif script_name == "eval_mmlu.py":
+            dataset_dir_name = "mmlu"
+        else:
+            dataset_dir_name = "unknown"
+        
+        dataset_output_dir = base_output_dir / dataset_dir_name
+        dataset_output_dir.mkdir(parents=True, exist_ok=True)
+        
         # For docvqa_textvqa_chartqa script, pass datasets parameter if provided
         if script_name == "eval_docvqa_textvqa_chartqa.py" and datasets:
-            results = evaluate_with_results(model_path, datasets)
+            results = evaluate_with_results(model_path, datasets, str(dataset_output_dir))
+        elif script_name == "eval_docvqa_textvqa_chartqa.py":
+            results = evaluate_with_results(model_path, "textvqa,docvqa,chartqa", str(dataset_output_dir))
+        elif script_name == "eval_mme.py":
+            results = evaluate_with_results(model_path, str(dataset_output_dir))
+        elif script_name == "eval_mmlu.py":
+            results = evaluate_with_results(model_path, str(dataset_output_dir))
+        elif script_name == "eval_ocrbenchv2.py":
+            results = evaluate_with_results(model_path, str(dataset_output_dir))
         else:
+            # Fallback for unknown scripts
             results = evaluate_with_results(model_path)
         
         print(f"✓ {script_name} completed successfully")
@@ -117,7 +148,8 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
                 return {
                     'script': script_name,
                     'status': 'success',
-                    'results': results
+                    'results': results,
+                    'dataset_output_dir': str(dataset_output_dir)
                 }
             elif 'error' in results:
                 # Error case
@@ -131,14 +163,16 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
                 return {
                     'script': script_name,
                     'status': 'success',
-                    'results': results
+                    'results': results,
+                    'dataset_output_dir': str(dataset_output_dir)
                 }
         else:
             # Unexpected format
             return {
                 'script': script_name,
                 'status': 'success',
-                'results': {'raw_output': results}
+                'results': {'raw_output': results},
+                'dataset_output_dir': str(dataset_output_dir)
             }
             
     except Exception as e:
@@ -155,28 +189,27 @@ def save_results_to_file(results, args):
     """Save evaluation results to a JSON file with metadata"""
     import datetime
     
-    # Create output directory
+    # Create base output directory and model-specific directory
     if args.output_dir:
-        output_dir = Path(args.output_dir)
+        base_output_dir = Path(args.output_dir)
     else:
-        output_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "images"
+        base_output_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "images"
     
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Extract model name for directory structure
+    model_name = os.path.basename(args.model_path.rstrip('/'))
+    model_output_dir = base_output_dir / model_name
+    model_output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate timestamp for filename
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = os.path.basename(args.model_path)
-    # Truncate model name if too long
-    if len(model_name) > 30:
-        model_name = model_name[:27] + "..."
     
     datasets_str = args.datasets.replace(",", "_")
     if len(datasets_str) > 20:
         datasets_str = datasets_str[:17] + "..."
     
-    # Create filename
-    filename = f"eval_{model_name}_{datasets_str}_{timestamp}.json"
-    output_file = output_dir / filename
+    # Create summary filename in model directory
+    summary_filename = f"summary_{datasets_str}_{timestamp}.json"
+    output_file = model_output_dir / summary_filename
     
     # Prepare metadata
     metadata = {
@@ -240,6 +273,7 @@ def save_results_to_file(results, args):
         print(f"   - Failed: {metadata['failed_evaluations']}")
         print(f"   - Model: {metadata['model_name']}")
         print(f"   - Datasets: {metadata['datasets_evaluated']}")
+        print(f"   - Model directory: {model_output_dir}")
         
         # Print key metrics
         if summary_stats:

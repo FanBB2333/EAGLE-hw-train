@@ -366,9 +366,10 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
 
 def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Evaluate predictions and calculate metrics"""
-    # Extract model name from model_path for subfolder creation
+    # Note: If output_path already contains model directory, don't add it again
+    # This prevents duplicate model directory names
     model_folder_name = os.path.basename(args.model_path.rstrip('/'))
-    if args.output_path:
+    if args.output_path and not args.output_path.endswith(model_folder_name):
         args.output_path = os.path.join(args.output_path, model_folder_name)
     
     if inference_results is not None:
@@ -460,15 +461,22 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
         input_ids = torch.flip(input_ids, [1])
     return input_ids
 
-def evaluate_with_results(model_path):
+def evaluate_with_results(model_path, output_path=None):
     """
     Run MMLU evaluation and return results as a dictionary
+    
+    Args:
+        model_path (str): Path to the model checkpoint
+        output_path (str): Custom output path for results. If None, uses default.
     """
     import sys
     
-    # Temporarily modify sys.argv to pass only the model_path argument
+    # Temporarily modify sys.argv to pass the model_path argument
     original_argv = sys.argv.copy()
-    sys.argv = ['eval_mmlu.py', '--model_path', model_path]
+    argv_list = ['eval_mmlu.py', '--model_path', model_path]
+    if output_path:
+        argv_list.extend(['--output_path', output_path])
+    sys.argv = argv_list
     
     try:
         # Use the existing parse_eval_args function to get default parameters
