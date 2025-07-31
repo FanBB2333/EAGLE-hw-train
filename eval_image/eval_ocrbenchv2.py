@@ -65,10 +65,10 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_path",
-        default='all_inc.json',
+        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/images',
         type=str,
-        metavar="= [filename.json]",
-        help="The output filename (e.g., all_5.json). The file will be saved in a date-based directory structure automatically.",
+        metavar="= [dir/file.jsonl] [DIR]",
+        help="The path to the output file where the result metrics will be saved.",
     )
     parser.add_argument(
         "--gen_kwargs",
@@ -761,36 +761,6 @@ def evaluate_with_results(model_path):
         return {"error": f"Failed to evaluate OCRBench v2: {str(e)}"}
 
 if __name__ == "__main__":
-    # Test the parse_final_results function with sample data if requested
-    if len(sys.argv) > 1 and sys.argv[1] == "--test-parse":
-        sample_output = """English Scores:
-text_recognition: 0.476 (Count: 1200)
-text_detection: 0.000 (Count: 500)
-text_spotting: 0.000 (Count: 200)
-relationship_extraction: 0.060 (Count: 700)
-element_parsing: 0.083 (Count: 1600)
-mathematical_calculation: 0.229 (Count: 500)
-visual_text_understanding: 0.412 (Count: 1300)
-knowledge_reasoning: 0.284 (Count: 1400)
-
-Chinese Scores:
-text_recognition: 0.032 (Count: 200)
-relationship_extraction: 0.040 (Count: 600)
-element_parsing: 0.085 (Count: 800)
-visual_text_understanding: 0.045 (Count: 200)
-knowledge_reasoning: 0.201 (Count: 800)
-
-Overall Scores:
-English Overall Score: 0.193
-Chinese Overall Score: 0.081
-End of Code!
-"""
-        
-        parsed = parse_final_results(sample_output)
-        print("Test results:")
-        print(json.dumps(parsed, indent=2, ensure_ascii=False))
-        sys.exit(0)
-    
     args = parse_eval_args()
     
     # Support different execution modes using argparse

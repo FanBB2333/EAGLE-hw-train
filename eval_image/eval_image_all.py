@@ -159,7 +159,7 @@ def save_results_to_file(results, args):
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "all_evaluations"
+        output_dir = PROJECT_ROOT / "eval_image" / "res_folder" / "images"
     
     output_dir.mkdir(parents=True, exist_ok=True)
     

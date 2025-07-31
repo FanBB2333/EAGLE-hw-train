@@ -65,7 +65,7 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_path",
-        default='/home1/hxl/disk2/Backup/EAGLE/chenxn/eagle_ocr/0710/acqa.json',
+        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/images',
         type=str,
         metavar="= [dir/file.jsonl] [DIR]",
         help="The path to the output file where the result metrics will be saved. If the path is a directory and log_samples is true, the results will be saved in the directory. Else the parent directory will be used.",
@@ -147,6 +147,11 @@ def activitynetqa_doc_to_visual(doc):
     
 @torch.no_grad()
 def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     tokenizer, model, image_processor, max_length = load_pretrained_model(
         model_path=args.model_path,
         model_base=None,
@@ -250,12 +255,20 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         )
         pbar.update(1)
     pbar.close()
-    with open(args.output_path, "w", encoding="utf-8") as f:
+    
+    # Create output directory if it doesn't exist
+    if args.output_path:
+        os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+        output_file = os.path.join(args.output_path, "acqa.json")
+    else:
+        output_file = "acqa.json"
+    
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(outputs, f, ensure_ascii=False, indent=4)
     # with open(args.output_path, 'w') as output_file:
     #     json.dump(outputs, output_file)
     
-    print("Save at", args.output_path)
+    print("Save at", output_file)
 
 
 def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tensor:

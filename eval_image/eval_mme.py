@@ -63,7 +63,7 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output_path",
-        default='/home6/fzy/repos/EAGLE/eval_image/mme/eagle',
+        default='/home6/fzy/repos/EAGLE/eval_image/res_folder/images',
         type=str,
         metavar="= [dir/file.jsonl] [DIR]",
         help="The path to the output file where the result metrics will be saved. If the path is a directory and log_samples is true, the results will be saved in the directory. Else the parent directory will be used.",
