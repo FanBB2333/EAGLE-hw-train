@@ -381,11 +381,15 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
         print("OCRBench v2 Evaluation Results:")
         print(score_output)
         
+        # Parse scores using the dedicated function
+        parsed_scores = parse_final_results(score_output)
+        
         # Parse scores from output (this is a simplified version)
         evaluation_results = {
             "processed_predictions": len(processed_outputs),
             "total_predictions": len(outputs),
             "evaluation_output": score_output,
+            "parsed_scores": parsed_scores,
             "eval_output_file": eval_output_file,
             "processed_pred_file": processed_pred_file
         }
@@ -438,6 +442,8 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
         summary["total_evaluated"] = results["total_evaluated"]
     if "evaluation_output" in results:
         summary["has_evaluation_output"] = True
+    if "parsed_scores" in results:
+        summary["parsed_scores"] = results["parsed_scores"]
     if "error" in results:
         summary["error"] = results["error"]
     
@@ -452,6 +458,31 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     if "error" in summary:
         print(f"  - Error: {summary['error']}")
     
+    # Print parsed scores if available
+    if "parsed_scores" in summary and summary["parsed_scores"]:
+        parsed_scores = summary["parsed_scores"]
+        print(f"  - Parsed Evaluation Scores:")
+        
+        # Print English scores
+        if "english_scores" in parsed_scores and parsed_scores["english_scores"]:
+            print(f"    English Scores:")
+            for task, score_info in parsed_scores["english_scores"].items():
+                print(f"      {task}: {score_info['score']:.3f} (Count: {score_info['count']})")
+        
+        # Print Chinese scores
+        if "chinese_scores" in parsed_scores and parsed_scores["chinese_scores"]:
+            print(f"    Chinese Scores:")
+            for task, score_info in parsed_scores["chinese_scores"].items():
+                print(f"      {task}: {score_info['score']:.3f} (Count: {score_info['count']})")
+        
+        # Print overall scores
+        if "overall_scores" in parsed_scores and parsed_scores["overall_scores"]:
+            print(f"    Overall Scores:")
+            if "english_overall" in parsed_scores["overall_scores"]:
+                print(f"      English Overall: {parsed_scores['overall_scores']['english_overall']:.3f}")
+            if "chinese_overall" in parsed_scores["overall_scores"]:
+                print(f"      Chinese Overall: {parsed_scores['overall_scores']['chinese_overall']:.3f}")
+    
     # Optionally save summary
     if args and args.output_path:
         eval_output_dir = str(PROJECT_ROOT / 'eval_image/eval_ocrbench')
@@ -465,6 +496,103 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
         print(f"OCRBench v2 summary saved to {summary_file}")
     
     return summary
+
+
+def parse_final_results(score_output: str) -> dict:
+    """
+    Parse the final evaluation results from OCRBench v2 score output.
+    
+    Args:
+        score_output: The stdout from the score calculation script
+        
+    Returns:
+        A dictionary containing parsed scores for English, Chinese, and overall metrics
+    """
+    results = {
+        "english_scores": {},
+        "chinese_scores": {},
+        "overall_scores": {},
+        "raw_output": score_output
+    }
+    
+    if not score_output or not isinstance(score_output, str):
+        return results
+    
+    lines = score_output.strip().split('\n')
+    current_section = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Identify sections
+        if line == "English Scores:":
+            current_section = "english"
+            continue
+        elif line == "Chinese Scores:":
+            current_section = "chinese"
+            continue
+        elif line == "Overall Scores:":
+            current_section = "overall"
+            continue
+        elif line == "End of Code!":
+            break
+            
+        # Parse score lines
+        if current_section == "english" and ":" in line and "Count:" in line:
+            # Format: "task_name: score (Count: count)"
+            try:
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    task_name = parts[0].strip()
+                    score_part = parts[1].strip()
+                    
+                    # Extract score and count
+                    if "(" in score_part and "Count:" in score_part:
+                        score_str = score_part.split("(")[0].strip()
+                        count_str = score_part.split("Count:")[1].strip().rstrip(")")
+                        
+                        results["english_scores"][task_name] = {
+                            "score": float(score_str),
+                            "count": int(count_str)
+                        }
+            except (ValueError, IndexError) as e:
+                print(f"Warning: Could not parse English score line: {line}, error: {e}")
+                
+        elif current_section == "chinese" and ":" in line and "Count:" in line:
+            # Format: "task_name: score (Count: count)"
+            try:
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    task_name = parts[0].strip()
+                    score_part = parts[1].strip()
+                    
+                    # Extract score and count
+                    if "(" in score_part and "Count:" in score_part:
+                        score_str = score_part.split("(")[0].strip()
+                        count_str = score_part.split("Count:")[1].strip().rstrip(")")
+                        
+                        results["chinese_scores"][task_name] = {
+                            "score": float(score_str),
+                            "count": int(count_str)
+                        }
+            except (ValueError, IndexError) as e:
+                print(f"Warning: Could not parse Chinese score line: {line}, error: {e}")
+                
+        elif current_section == "overall" and ":" in line:
+            # Format: "English Overall Score: score" or "Chinese Overall Score: score"
+            try:
+                if line.startswith("English Overall Score:"):
+                    score_str = line.split(":")[1].strip()
+                    results["overall_scores"]["english_overall"] = float(score_str)
+                elif line.startswith("Chinese Overall Score:"):
+                    score_str = line.split(":")[1].strip()
+                    results["overall_scores"]["chinese_overall"] = float(score_str)
+            except (ValueError, IndexError) as e:
+                print(f"Warning: Could not parse overall score line: {line}, error: {e}")
+    
+    return results
 
 
 def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tensor:
@@ -509,6 +637,36 @@ def evaluate_with_results(model_path):
         return {"error": f"Failed to evaluate OCRBench v2: {str(e)}"}
 
 if __name__ == "__main__":
+    # Test the parse_final_results function with sample data if requested
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-parse":
+        sample_output = """English Scores:
+text_recognition: 0.476 (Count: 1200)
+text_detection: 0.000 (Count: 500)
+text_spotting: 0.000 (Count: 200)
+relationship_extraction: 0.060 (Count: 700)
+element_parsing: 0.083 (Count: 1600)
+mathematical_calculation: 0.229 (Count: 500)
+visual_text_understanding: 0.412 (Count: 1300)
+knowledge_reasoning: 0.284 (Count: 1400)
+
+Chinese Scores:
+text_recognition: 0.032 (Count: 200)
+relationship_extraction: 0.040 (Count: 600)
+element_parsing: 0.085 (Count: 800)
+visual_text_understanding: 0.045 (Count: 200)
+knowledge_reasoning: 0.201 (Count: 800)
+
+Overall Scores:
+English Overall Score: 0.193
+Chinese Overall Score: 0.081
+End of Code!
+"""
+        
+        parsed = parse_final_results(sample_output)
+        print("Test results:")
+        print(json.dumps(parsed, indent=2, ensure_ascii=False))
+        sys.exit(0)
+    
     args = parse_eval_args()
     
     # Support different execution modes using argparse
