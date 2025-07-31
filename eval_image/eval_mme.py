@@ -148,6 +148,11 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
         model_base=None,
         model_name=args.model_name
     )
+    
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
     # print(f"image processor: {type(image_processor)}")
     model.eval()
     modality = 'image'
@@ -255,6 +260,11 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
 
 def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Evaluate predictions by converting to MME format and calculating scores"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     # Get predictions from inference_results or load from file
     if inference_results is not None and "mme" in inference_results:
         outputs = inference_results["mme"]
@@ -435,6 +445,11 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
 
 def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize MME evaluation results"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
     if evaluation_results is not None:
         # Use the passed evaluation results
         results = evaluation_results
