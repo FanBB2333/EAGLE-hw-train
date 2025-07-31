@@ -482,6 +482,66 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
                 print(f"      English Overall: {parsed_scores['overall_scores']['english_overall']:.3f}")
             if "chinese_overall" in parsed_scores["overall_scores"]:
                 print(f"      Chinese Overall: {parsed_scores['overall_scores']['chinese_overall']:.3f}")
+        
+        # Print detailed task statistics
+        if "task_statistics" in parsed_scores and parsed_scores["task_statistics"]:
+            task_stats = parsed_scores["task_statistics"]
+            print(f"  - Task Statistics:")
+            
+            # English task analysis
+            if task_stats.get("english_task_count", 0) > 0:
+                print(f"    English Tasks Analysis:")
+                print(f"      Total Tasks: {task_stats['english_task_count']}")
+                print(f"      Total Test Items: {task_stats['total_english_count']}")
+                print(f"      Weighted Average: {task_stats['english_weighted_average']:.3f}")
+                
+                if task_stats.get("english_best_task"):
+                    best = task_stats["english_best_task"]
+                    print(f"      Best Task: {best['task']} ({best['score']:.3f})")
+                
+                if task_stats.get("english_worst_task"):
+                    worst = task_stats["english_worst_task"]
+                    print(f"      Worst Task: {worst['task']} ({worst['score']:.3f})")
+            
+            # Chinese task analysis
+            if task_stats.get("chinese_task_count", 0) > 0:
+                print(f"    Chinese Tasks Analysis:")
+                print(f"      Total Tasks: {task_stats['chinese_task_count']}")
+                print(f"      Total Test Items: {task_stats['total_chinese_count']}")
+                print(f"      Weighted Average: {task_stats['chinese_weighted_average']:.3f}")
+                
+                if task_stats.get("chinese_best_task"):
+                    best = task_stats["chinese_best_task"]
+                    print(f"      Best Task: {best['task']} ({best['score']:.3f})")
+                
+                if task_stats.get("chinese_worst_task"):
+                    worst = task_stats["chinese_worst_task"]
+                    print(f"      Worst Task: {worst['task']} ({worst['score']:.3f})")
+            
+            # Task breakdown by performance
+            print(f"    Performance Breakdown:")
+            all_tasks = []
+            
+            # Combine English and Chinese tasks
+            for task in task_stats.get("english_tasks", []):
+                all_tasks.append({"language": "English", **task})
+            for task in task_stats.get("chinese_tasks", []):
+                all_tasks.append({"language": "Chinese", **task})
+            
+            if all_tasks:
+                # Sort by score
+                all_tasks.sort(key=lambda x: x["score"], reverse=True)
+                
+                # Show top 3 and bottom 3 tasks
+                print(f"      Top 3 Tasks:")
+                for i, task in enumerate(all_tasks[:3]):
+                    print(f"        {i+1}. {task['language']} - {task['task']}: {task['score']:.3f}")
+                
+                if len(all_tasks) > 3:
+                    print(f"      Bottom 3 Tasks:")
+                    for i, task in enumerate(all_tasks[-3:]):
+                        rank = len(all_tasks) - 2 + i
+                        print(f"        {rank}. {task['language']} - {task['task']}: {task['score']:.3f}")
     
     # Optionally save summary
     if args and args.output_path:
@@ -512,6 +572,7 @@ def parse_final_results(score_output: str) -> dict:
         "english_scores": {},
         "chinese_scores": {},
         "overall_scores": {},
+        "task_statistics": {},
         "raw_output": score_output
     }
     
@@ -520,6 +581,16 @@ def parse_final_results(score_output: str) -> dict:
     
     lines = score_output.strip().split('\n')
     current_section = None
+    
+    # Initialize task statistics
+    task_stats = {
+        "english_tasks": [],
+        "chinese_tasks": [],
+        "total_english_count": 0,
+        "total_chinese_count": 0,
+        "english_weighted_score": 0.0,
+        "chinese_weighted_score": 0.0
+    }
     
     for line in lines:
         line = line.strip()
@@ -553,10 +624,23 @@ def parse_final_results(score_output: str) -> dict:
                         score_str = score_part.split("(")[0].strip()
                         count_str = score_part.split("Count:")[1].strip().rstrip(")")
                         
+                        score = float(score_str)
+                        count = int(count_str)
+                        
                         results["english_scores"][task_name] = {
-                            "score": float(score_str),
-                            "count": int(count_str)
+                            "score": score,
+                            "count": count
                         }
+                        
+                        # Update statistics
+                        task_stats["english_tasks"].append({
+                            "task": task_name,
+                            "score": score,
+                            "count": count
+                        })
+                        task_stats["total_english_count"] += count
+                        task_stats["english_weighted_score"] += score * count
+                        
             except (ValueError, IndexError) as e:
                 print(f"Warning: Could not parse English score line: {line}, error: {e}")
                 
@@ -573,10 +657,23 @@ def parse_final_results(score_output: str) -> dict:
                         score_str = score_part.split("(")[0].strip()
                         count_str = score_part.split("Count:")[1].strip().rstrip(")")
                         
+                        score = float(score_str)
+                        count = int(count_str)
+                        
                         results["chinese_scores"][task_name] = {
-                            "score": float(score_str),
-                            "count": int(count_str)
+                            "score": score,
+                            "count": count
                         }
+                        
+                        # Update statistics
+                        task_stats["chinese_tasks"].append({
+                            "task": task_name,
+                            "score": score,
+                            "count": count
+                        })
+                        task_stats["total_chinese_count"] += count
+                        task_stats["chinese_weighted_score"] += score * count
+                        
             except (ValueError, IndexError) as e:
                 print(f"Warning: Could not parse Chinese score line: {line}, error: {e}")
                 
@@ -591,6 +688,33 @@ def parse_final_results(score_output: str) -> dict:
                     results["overall_scores"]["chinese_overall"] = float(score_str)
             except (ValueError, IndexError) as e:
                 print(f"Warning: Could not parse overall score line: {line}, error: {e}")
+    
+    # Calculate weighted averages and add task statistics
+    if task_stats["total_english_count"] > 0:
+        task_stats["english_weighted_average"] = task_stats["english_weighted_score"] / task_stats["total_english_count"]
+    else:
+        task_stats["english_weighted_average"] = 0.0
+        
+    if task_stats["total_chinese_count"] > 0:
+        task_stats["chinese_weighted_average"] = task_stats["chinese_weighted_score"] / task_stats["total_chinese_count"]
+    else:
+        task_stats["chinese_weighted_average"] = 0.0
+    
+    # Sort tasks by score (descending)
+    task_stats["english_tasks"].sort(key=lambda x: x["score"], reverse=True)
+    task_stats["chinese_tasks"].sort(key=lambda x: x["score"], reverse=True)
+    
+    # Add detailed task analysis
+    task_stats["english_best_task"] = task_stats["english_tasks"][0] if task_stats["english_tasks"] else None
+    task_stats["english_worst_task"] = task_stats["english_tasks"][-1] if task_stats["english_tasks"] else None
+    task_stats["chinese_best_task"] = task_stats["chinese_tasks"][0] if task_stats["chinese_tasks"] else None
+    task_stats["chinese_worst_task"] = task_stats["chinese_tasks"][-1] if task_stats["chinese_tasks"] else None
+    
+    # Calculate task distribution
+    task_stats["english_task_count"] = len(task_stats["english_tasks"])
+    task_stats["chinese_task_count"] = len(task_stats["chinese_tasks"])
+    
+    results["task_statistics"] = task_stats
     
     return results
 
