@@ -415,11 +415,67 @@ def run_all(args):
 
 
 def fix_autoload_essentials():
+    """
+    Copy essential configuration files from source model to all merged model image directories.
+    This ensures that merged models have all necessary files for auto-loading.
+    """
+    import shutil
+    
     source_path = PROJECT_ROOT / "checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle"
     copy_files = ["config.json", "generation_config.json", "model.safetensors.index.json", "special_tokens_map.json", "tokenizer_config.json", "tokenizer.json"]
     
     dest_path = PROJECT_ROOT / "checkpoints/Images/merged_model"
-    # for each folder x in dest_path, enter dest_path/x/image, copy the source files to dest_path/x/image
+    
+    if not source_path.exists():
+        print(f"❌ Source path does not exist: {source_path}")
+        return False
+    
+    if not dest_path.exists():
+        print(f"❌ Destination path does not exist: {dest_path}")
+        return False
+    
+    # Check if all required files exist in source
+    missing_files = []
+    for file_name in copy_files:
+        source_file = source_path / file_name
+        if not source_file.exists():
+            missing_files.append(file_name)
+    
+    if missing_files:
+        print(f"❌ Missing files in source directory: {missing_files}")
+        return False
+    
+    copied_count = 0
+    error_count = 0
+    
+    # Iterate through each folder in dest_path
+    for folder in dest_path.iterdir():
+        if folder.is_dir():
+            image_dir = folder / "image"
+            if image_dir.exists() and image_dir.is_dir():
+                print(f"📁 Processing {folder.name}/image/")
+                
+                # Copy each required file
+                for file_name in copy_files:
+                    source_file = source_path / file_name
+                    dest_file = image_dir / file_name
+                    
+                    try:
+                        shutil.copy2(source_file, dest_file)
+                        print(f"  ✓ Copied {file_name}")
+                        copied_count += 1
+                    except Exception as e:
+                        print(f"  ❌ Failed to copy {file_name}: {e}")
+                        error_count += 1
+            else:
+                print(f"⚠️  Skipping {folder.name} (no image subdirectory found)")
+    
+    print(f"\n📊 Summary:")
+    print(f"  - Files copied successfully: {copied_count}")
+    print(f"  - Copy errors: {error_count}")
+    print(f"  - Directories processed: {len([f for f in dest_path.iterdir() if f.is_dir() and (f / 'image').exists()])}")
+    
+    return error_count == 0
 
 if __name__ == "__main__":
     results = run_all(args)
