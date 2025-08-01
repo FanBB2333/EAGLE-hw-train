@@ -426,6 +426,8 @@ def fix_autoload_essentials():
     
     dest_path = PROJECT_ROOT / "checkpoints/Images/merged_model"
     
+    dest_rename_path = dest_path / "renamed"
+    
     if not source_path.exists():
         print(f"❌ Source path does not exist: {source_path}")
         return False
@@ -455,6 +457,19 @@ def fix_autoload_essentials():
             if image_dir.exists() and image_dir.is_dir():
                 print(f"📁 Processing {folder.name}/image/")
                 
+                # ln -s f"{image_dir}" "{dest_rename_path}/{folder.name}"
+                if not dest_rename_path.exists():
+                    dest_rename_path.mkdir(parents=True, exist_ok=True)
+                symlink_path = dest_rename_path / folder.name
+                if not symlink_path.exists():
+                    try:
+                        symlink_path.symlink_to(image_dir)
+                        print(f"  ✓ Created symlink: {symlink_path}")
+                    except Exception as e:
+                        print(f"  ❌ Failed to create symlink: {e}")
+                        error_count += 1
+                else:
+                    print(f"  ⚠️ Symlink already exists: {symlink_path}")
                 # Copy each required file
                 for file_name in copy_files:
                     source_file = source_path / file_name
