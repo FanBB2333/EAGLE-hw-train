@@ -413,6 +413,14 @@ def run_all(args):
     
     return results
 
+
+def fix_autoload_essentials():
+    source_path = PROJECT_ROOT / "checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle"
+    copy_files = ["config.json", "generation_config.json", "model.safetensors.index.json", "special_tokens_map.json", "tokenizer_config.json", "tokenizer.json"]
+    
+    dest_path = PROJECT_ROOT / "checkpoints/Images/merged_model"
+    # for each folder x in dest_path, enter dest_path/x/image, copy the source files to dest_path/x/image
+
 if __name__ == "__main__":
     results = run_all(args)
     if results:
