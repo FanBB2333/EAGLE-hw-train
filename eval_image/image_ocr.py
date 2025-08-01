@@ -48,7 +48,34 @@ def main():
 
 
 def get_ocr_result(image: Image.Image) -> dict:
-    pass
+    ocr = PaddleOCR(
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        device="cpu",
+        lang="en"
+    )
+    
+    def convert_ndarray(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, dict):
+            return {k: convert_ndarray(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [convert_ndarray(i) for i in obj]
+        return obj
+    
+    try:
+        # 将PIL图像转换为numpy数组
+        img_array = np.array(image)
+        # 进行OCR识别
+        result = ocr.predict(img_array)
+        # 转换numpy数组为普通Python对象
+        result = convert_ndarray(result[0].json['res'])
+        return result
+    except Exception as e:
+        print(f"OCR识别失败: {e}")
+        return {}
 
 if __name__ == "__main__":
     main()
