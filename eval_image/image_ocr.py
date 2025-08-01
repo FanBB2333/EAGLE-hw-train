@@ -1,4 +1,5 @@
 import os
+from PIL import Image
 import json
 from paddleocr import PaddleOCR
 import numpy as np
@@ -45,6 +46,9 @@ def main():
                 except:
                     print(f"图片处理失败: {img_path}")
 
+
+def get_ocr_result(image: Image.Image) -> dict:
+    pass
 
 if __name__ == "__main__":
     main()
