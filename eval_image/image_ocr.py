@@ -1,6 +1,7 @@
 import os
 from PIL import Image
 import json
+from datasets import load_dataset
 from paddleocr import PaddleOCR
 import numpy as np
 
@@ -77,6 +78,18 @@ def get_ocr_result(image: Image.Image) -> dict:
         print(f"OCR识别失败: {e}")
         return {}
 
+def get_textvqa_results():
+    ds = load_dataset("lmms-lab/textvqa", split="validation")
+    ocr_results = dict()
+    for data in ds:
+        image = data['image'].convert('RGB')
+        ocr_result = get_ocr_result(image)
+        ocr_results[data['image_id']] = ocr_result
+
+    with open("textvqa_ocr_results.json", "w", encoding="utf-8") as f:
+        json.dump(ocr_results, f, ensure_ascii=False, indent=4)
+    return ocr_results
+
 if __name__ == "__main__":
-    main()
+    get_textvqa_results()
     

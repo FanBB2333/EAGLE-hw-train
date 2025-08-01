@@ -8,6 +8,7 @@ sys.path.append('./')
 import json
 from datasets import load_dataset
 
+from image_ocr import get_ocr_result
 import argparse
 import logging
 import re
@@ -281,6 +282,9 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
                 # TextVQA answers is a list of strings, filter out empty ones
                 answers = [answer.strip() for answer in data['answers'] if answer.strip()]
                 question_id = str(data['question_id'])
+                # paddle_results = get_ocr_result(image)
+                # if paddle_results:
+                #     print(f"Image OCR results for {question_id}: {paddle_results}")
             elif dataset_name == 'docvqa':
                 # DocVQA answers is a list of strings or None
                 if data['answers'] is not None and isinstance(data['answers'], list):
