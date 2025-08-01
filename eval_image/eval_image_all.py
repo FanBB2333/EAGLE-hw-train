@@ -478,6 +478,8 @@ def fix_autoload_essentials():
     return error_count == 0
 
 if __name__ == "__main__":
+    # fix_autoload_essentials()
+    # sys.exit(0)  # Exit early if fix_autoload_essentials is successful
     results = run_all(args)
     if results:
         print(f"\n🎉 Completed {len(results)} evaluations")
