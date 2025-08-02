@@ -1,6 +1,7 @@
 import os
 from PIL import Image
 import json
+from tqdm import tqdm
 from datasets import load_dataset
 from paddleocr import PaddleOCR
 import numpy as np
@@ -48,15 +49,7 @@ def main():
                     print(f"图片处理失败: {img_path}")
 
 
-def get_ocr_result(image: Image.Image) -> dict:
-    ocr = PaddleOCR(
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=False,
-        device="cpu",
-        lang="en"
-    )
-    
+def get_ocr_result(image: Image.Image, ocr) -> dict:
     def convert_ndarray(obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -80,10 +73,17 @@ def get_ocr_result(image: Image.Image) -> dict:
 
 def get_textvqa_results():
     ds = load_dataset("lmms-lab/textvqa", split="validation")
+    ocr = PaddleOCR(
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        device="cpu",
+        lang="en"
+    )
     ocr_results = dict()
-    for data in ds:
+    for data in tqdm(ds, total=len(ds)):
         image = data['image'].convert('RGB')
-        ocr_result = get_ocr_result(image)
+        ocr_result = get_ocr_result(image, ocr)
         ocr_results[data['image_id']] = ocr_result
 
     with open("textvqa_ocr_results.json", "w", encoding="utf-8") as f:
