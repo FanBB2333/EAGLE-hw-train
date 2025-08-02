@@ -29,18 +29,13 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-import logging
-# set logging level to INFO with format
-# logging.basicConfig(
-#     format='%(asctime)s [%(levelname)s]: %(message)s',
-#     level=logging.INFO,
-#     datefmt='%Y-%m-%d %H:%M:%S'
-# )
+
 import os
 import copy
-from dataclasses import dataclass, field
 from datetime import datetime
+from dataclasses import dataclass, field
 import json
+import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
 
@@ -57,10 +52,12 @@ from eagle.train.eagle_trainer import EagleTrainer
 from eagle import conversation as conversation_lib
 from eagle.model import *
 from eagle.mm_utils import tokenizer_image_token
+from eagle.datasets.video_dataset import make_supervised_data_module, smart_tokenizer_and_embedding_resize, DataArguments
+from safetensors.torch import safe_open
+import copy
 
 from PIL import Image
-from eagle.datasets.image_dataset import make_supervised_data_module, smart_tokenizer_and_embedding_resize, DataArguments
-from safetensors.torch import safe_open
+import tensorboard
 
 local_rank = None
 
@@ -81,7 +78,13 @@ class ModelArguments:
     tune_mm_mlp_adapter: bool = field(default=False)
     vision_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
-    
+    pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
+    mm_projector_type: Optional[str] = field(default='linear')
+    mm_use_im_start_end: bool = field(default=False)
+    mm_use_im_patch_token: bool = field(default=True)
+    mm_patch_merge_type: Optional[str] = field(default='flat')
+    mm_vision_select_feature: Optional[str] = field(default="patch")
+
     # BEGIN
     # Copied from CuMo
     num_experts: Optional[int] = field(default=1) 
@@ -93,22 +96,6 @@ class ModelArguments:
     mlp_smoe: Optional[bool] = field(default=False)
     clip_smoe: Optional[bool] = field(default=False)
     scales: Optional[str] = field(default=None)
-
-    # Add audio
-    audio_tower: Optional[str] = field(default=None) # audio encoder pretrained path
-    mm_audio_select_layer: Optional[int] = field(default=-1)   # default to the last layer
-    mm_audio_select_feature: Optional[str] = field(default="patch")
-    pretrain_mm_audio_projection: Optional[str] = field(default=None)
-    mm_audio_projector_type: Optional[str] = field(default='linear')
-    #END
-    
-
-    pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
-    mm_projector_type: Optional[str] = field(default='linear')
-    mm_use_im_start_end: bool = field(default=False)
-    mm_use_im_patch_token: bool = field(default=True)
-    mm_patch_merge_type: Optional[str] = field(default='flat')
-    mm_vision_select_feature: Optional[str] = field(default="patch")
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -265,9 +252,6 @@ def train(attn_implementation=None):
     local_rank = training_args.local_rank
     compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
 
-    # Copied from CuMo
-    if model_args.scales is not None:
-        model_args.scales = [int(i) for i in model_args.scales.split(',')]
 
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
@@ -305,9 +289,6 @@ def train(attn_implementation=None):
             **bnb_model_from_pretrained_args
         )
     model.config.use_cache = False
-
-    # Copied from CuMo, maybe useless
-    model.config.mlp_smoe = model_args.mlp_smoe
 
     if model_args.freeze_backbone:
         model.model.requires_grad_(False)
@@ -384,19 +365,19 @@ def train(attn_implementation=None):
                 model=model,
             )
 
+    model.set_modal('video')
+
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(
             model_args=model_args,
-            fsdp=training_args.fsdp
+            fsdp=training_args.fsdp,
+            modality = 'video'
         )
         
         vision_tower = model.get_vision_tower()
         vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
         data_args.image_processor = vision_tower.image_processor
-        if hasattr(vision_tower, 'processor'):
-            data_args.processor = vision_tower.processor
-        data_args.tokenizer = tokenizer
         data_args.is_multimodal = True
 
         model.config.image_aspect_ratio = data_args.image_aspect_ratio
@@ -422,47 +403,14 @@ def train(attn_implementation=None):
         training_args.use_im_start_end = model_args.mm_use_im_start_end
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
-    # # BEGIN
-    # # Add sample codes here
-    # sample_dataset = LazySupervisedDataset(tokenizer=tokenizer,data_path=data_args.data_path,data_args=data_args)
-    # print(sample_dataset[0])
-    # return
-    # # END
-    # BEGIN
-    if model_args.audio_tower is not None:
-        model.set_modal('audio')
-        model.get_model().initialize_audio_modules(
-            model_args=model_args,
-            fsdp=training_args.fsdp
-        )
-        audio_tower = model.get_audio_tower()
-        audio_tower.to(
-            dtype=torch.bfloat16 if training_args.bf16 else torch.float16, 
-            device=training_args.device
-        )
 
-        model.config.tune_mm_audio_projection = training_args.tune_mm_audio_projection = model_args.tune_mm_audio_projection
-        if model_args.tune_mm_audio_projection:
-            model.requires_grad_(False)
-            for p in model.get_model().mm_audio_projector.parameters():
-                p.requires_grad = True
+    merged_dir = "/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/merged_model/0.99_0.01/image"
 
-        model.config.freeze_mm_audio_projection = training_args.freeze_mm_audio_projection
-        if training_args.freeze_mm_audio_projection:
-            for p in model.get_model().mm_audio_projector.parameters():
-                p.requires_grad = False
-
-        if training_args.bits in [4, 8]:
-            model.get_model().mm_audio_projector.to(dtype=compute_dtype, device=training_args.device)
-        
-        model.config.mm_audio_projector_lr = training_args.mm_audio_projector_lr
-
-    # END
     tensors = {}
 
     safetensor_paths = [
-        "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2/model-00001-of-00002.safetensors",
-        "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2/model-00002-of-00002.safetensors",
+        os.path.join(merged_dir, "model-00001-of-00002.safetensors"),
+        os.path.join(merged_dir, "model-00002-of-00002.safetensors"),
     ]
     
     for safetensor_path in safetensor_paths:
@@ -488,35 +436,39 @@ def train(attn_implementation=None):
             else:
                 print(f"Key {name} not found in safetensor")
     
-    
+
     for name, param in model.named_parameters():
         if 'align_stages' in name:
             param.requires_grad = True
 
     if model_args.version != 'plain':
+        # pr_llm
+        for name, param in model.get_model().vision_tower.named_parameters():
+            param.requires_grad = False
+
         max_layer_num = -1
         for name, _ in model.get_model().vision_tower.named_parameters():
-            if 'vision_model.encoder.layers.' in name:
+            if 'vision_tower.encoder.layers.' in name:
                 # 提取层数
-                layer_num = int(name.split('vision_model.encoder.layers.')[-1].split('.')[0])  # 根据你的命名规则提取层数
+                layer_num = int(name.split('vision_tower.encoder.layers.')[-1].split('.')[0])  # 根据你的命名规则提取层数
                 max_layer_num = max(max_layer_num, layer_num)
         print(max_layer_num)
 
         # en_pr_llm
         # for name, param in model.get_model().vision_tower.named_parameters():
-        #     if 'vision_model.encoder.layers.'  + str(max_layer_num) in name:
+        #     if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
         #         param.requires_grad = False
-        #     if 'vision_model.post_layernorm' in name:
+        #     if 'vision_tower.post_layernorm' in name:
         #         param.requires_grad = False
 
         # en_pr
         # for name, param in model.get_model().vision_tower.named_parameters():
-        #     if 'vision_model.encoder.layers.'  + str(max_layer_num) in name:
+        #     if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
         #         param.requires_grad = False
-        #     if 'vision_model.post_layernorm' in name:
+        #     if 'vision_tower.post_layernorm' in name:
         #         param.requires_grad = False
-        # for name, param in model.get_model().named_parameters():
-        #     if "vision_model" not in name:
+        # for name, param in model.named_parameters():
+        #     if "vision_tower" not in name:
         #         if "mm_projector" not in name:
         #             param.requires_grad = False
 
@@ -525,18 +477,23 @@ def train(attn_implementation=None):
         #     if "mm_projector" not in name:
         #         param.requires_grad = False
 
-        # pr_llm
-        for name, param in model.get_model().vision_tower.named_parameters():
-            param.requires_grad = False
 
-    print("require grad")
+        # en first 3 layer
+        # for layer_num in range(3, max_layer_num + 1):
+        #     for name, param in model.get_model().vision_tower.named_parameters():
+        #         if 'vision_tower.encoder.layers.' + str(layer_num) + '.' in name:
+        #             param.requires_grad = False
+
+        # en last 3 layer
+        # for layer_num in range(0, max_layer_num - 3):
+        #     for name, param in model.get_model().vision_tower.named_parameters():
+        #         if 'vision_tower.encoder.layers.' + str(layer_num) + '.' in name:
+        #             param.requires_grad = False
+    
+    print('requires_grad')
     for name, param in model.named_parameters():
         if param.requires_grad is True:
             print(name)
-    # print("not require grad")
-    # for name, param in model.named_parameters():
-    #     if param.requires_grad is False:
-    #         print(name)
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
@@ -551,18 +508,30 @@ def train(attn_implementation=None):
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
-    print(f"tokenizer: {type(tokenizer)}")
+
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
-    
+    # debug
+    # data_module['train_dataset'] = data_module['train_dataset'][400:]
     print(model.device)
-    # import pdb
-    # pdb.set_trace()
     trainer = EagleTrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
                     **data_module)
 
+    # train_dataloader = trainer.get_train_dataloader()
+    debug = False
+    
+    if debug:
+        all_data = list()
+        for idx, b in enumerate(train_dataloader):
+            # all_data.append(b)
+            print(f"Batch {idx}'s image type is {type(b['images'])}")
+            if not isinstance(b['images'], torch.Tensor):
+                print(f"Batch {idx}'s image is not a tensor, it is {type(b['images'])}")
+            # if idx == 114:
+                # print(1)
+        
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
     else:
