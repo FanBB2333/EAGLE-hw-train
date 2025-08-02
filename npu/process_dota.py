@@ -37,6 +37,20 @@ sample_format_lambda = lambda question, answer, image_path, id, path_prefix="vid
     # 'image': f"{path_prefix}/{image_path.split('/')[-1]}" # v_ehGHCYKzyZ8.mp4
 }
 
+def get_video_length(video_path):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps > 0:
+        video_length = frame_count / fps
+    else:
+        print("Unable to retrieve FPS from the video.")
+        return None
+    cap.release()
+    return video_length
+
 
 class DotaDataset(Dataset):
     def __init__(self, metadata_file):
@@ -66,7 +80,7 @@ class DotaDataset(Dataset):
     def to_qa(self):
         # construct question-answer pairs from the metadata, question about the anomaly type in the video
         qa_pairs = []
-        for video_info in self.data:
+        for video_info in tqdm(self.data):
             video_id = video_info['video_id']
             question = f"<image>\nWhat is the anomaly type in the video?"
             answer = video_info['anomaly_class']
@@ -79,7 +93,13 @@ class DotaDataset(Dataset):
     def to_loc(self):
         # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
         loc_pairs = []
-        for video_info in self.data:
+        for video_info in tqdm(self.data):
+            # calculate fps
+            video_length_s = get_video_length(video_info['video_path'])
+            if video_length_s is None:
+                print(f"Could not determine video length for {video_info['video_path']}, skipping.")
+                continue
+            video_info['fps'] = video_info['num_frames'] / video_length_s 
             video_id = video_info['video_id']
             duration = video_info['num_frames'] / video_info['fps']
             question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{video_info["anomaly_class"]}" in this video, the event starts at'
@@ -107,5 +127,10 @@ class DotaDataset(Dataset):
 if __name__ == "__main__":
     train_data = DOTA_METADATA_DIR / "metadata_train.json"
     test_data = DOTA_METADATA_DIR / "metadata_test.json"
+    
+    dota_train = DotaDataset(train_data)
+    dota_test = DotaDataset(test_data)
+    dota_train.to_qa()
+    dota_train.to_loc()
     
     
