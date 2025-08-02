@@ -9,14 +9,16 @@ LOG_DIR="/home6/fzy/repos/EAGLE/eval_image/logs"
 SCRIPT_PATH="/home6/fzy/repos/EAGLE/eval_image/eval_image_all.py"
 
 # Available GPUs (modify according to your setup)
-GPUS=(0 )
+GPUS=(0 1)
 
 # Model directories
 MODELS=(
     # "0.6_0.4"
     # "0.7_0.3" 
     # "0.8_0.2"
-    "0.9_0.1"
+    # "0.9_0.1"
+    "0.95_0.05"
+    "0.98_0.02"
     # "0.99_0.01"
     # "0.999_0.001"
     # "0.9999_0.0001"
