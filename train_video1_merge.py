@@ -441,6 +441,7 @@ def train(attn_implementation=None):
         if 'align_stages' in name:
             param.requires_grad = True
 
+    print(f"model: {model}")
     if model_args.version != 'plain':
         # pr_llm
         for name, param in model.get_model().vision_tower.named_parameters():
@@ -462,15 +463,15 @@ def train(attn_implementation=None):
         #         param.requires_grad = False
 
         # en_pr
-        # for name, param in model.get_model().vision_tower.named_parameters():
-        #     if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
-        #         param.requires_grad = False
-        #     if 'vision_tower.post_layernorm' in name:
-        #         param.requires_grad = False
-        # for name, param in model.named_parameters():
-        #     if "vision_tower" not in name:
-        #         if "mm_projector" not in name:
-        #             param.requires_grad = False
+        for name, param in model.get_model().vision_tower.named_parameters():
+            if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
+                param.requires_grad = False
+            if 'vision_tower.post_layernorm' in name:
+                param.requires_grad = False
+        for name, param in model.named_parameters():
+            if "vision_tower" not in name:
+                if "mm_projector" not in name:
+                    param.requires_grad = False
 
         # pr
         # for name, param in model.get_model().named_parameters():
@@ -529,8 +530,6 @@ def train(attn_implementation=None):
             print(f"Batch {idx}'s image type is {type(b['images'])}")
             if not isinstance(b['images'], torch.Tensor):
                 print(f"Batch {idx}'s image is not a tensor, it is {type(b['images'])}")
-            # if idx == 114:
-                # print(1)
         
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)
