@@ -38,7 +38,7 @@ sample_format_lambda = lambda question, answer, image_path, id, path_prefix="vid
 }
 
 def get_video_length(video_path):
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         return None
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -102,8 +102,10 @@ class DotaDataset(Dataset):
             video_info['fps'] = video_info['num_frames'] / video_length_s 
             video_id = video_info['video_id']
             duration = video_info['num_frames'] / video_info['fps']
+            image_path = str(video_info['video_path'])
+            answer = f"{video_info['anomaly_start'] / video_info['fps']}s"
             question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{video_info["anomaly_class"]}" in this video, the event starts at'
-            loc_pairs.append(sample_format_lambda(question1, "", "", video_id))
+            loc_pairs.append(sample_format_lambda(question1, answer, image_path, video_id))
         with open(DOTA_CLEAN_DIR / "dota_loc_pairs.json", 'w') as f:
             json.dump(loc_pairs, f, indent=4)
         return loc_pairs
