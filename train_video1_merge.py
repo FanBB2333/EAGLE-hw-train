@@ -444,8 +444,9 @@ def train(attn_implementation=None):
     print(f"model: {model}")
     if model_args.version != 'plain':
         # pr_llm
-        for name, param in model.get_model().vision_tower.named_parameters():
-            param.requires_grad = False
+        # 注释掉这行，避免先冻结整个vision_tower
+        # for name, param in model.get_model().vision_tower.named_parameters():
+        #     param.requires_grad = False
 
         max_layer_num = -1
         for name, _ in model.get_model().vision_tower.named_parameters():
@@ -462,16 +463,19 @@ def train(attn_implementation=None):
         #     if 'vision_tower.post_layernorm' in name:
         #         param.requires_grad = False
 
-        # en_pr
+        # en_pr - 修正后的逻辑：先设置全局冻结策略，再设置vision_tower的特定层冻结
+        # 第一步：冻结除vision_tower和mm_projector之外的所有参数
+        for name, param in model.named_parameters():
+            if "vision_tower" not in name:
+                if "mm_projector" not in name:
+                    param.requires_grad = False
+        
+        # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）
         for name, param in model.get_model().vision_tower.named_parameters():
             if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
                 param.requires_grad = False
             if 'vision_tower.post_layernorm' in name:
                 param.requires_grad = False
-        for name, param in model.named_parameters():
-            if "vision_tower" not in name:
-                if "mm_projector" not in name:
-                    param.requires_grad = False
 
         # pr
         # for name, param in model.get_model().named_parameters():
