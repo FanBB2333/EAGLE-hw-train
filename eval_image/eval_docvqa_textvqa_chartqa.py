@@ -1,5 +1,5 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import torch
 from torch.utils.data import DataLoader
 from accelerate import PartialState
@@ -12,6 +12,7 @@ from image_ocr import get_ocr_result
 import argparse
 import logging
 import re
+from pathlib import Path
 from typing import Union
 from tqdm import tqdm
 from PIL import Image
@@ -32,11 +33,7 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle/checkpoint-30000", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle", 
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2",
-        # default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc",
-        default="./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-inc3",
+        default="/home6/fzy/repos/EAGLE/checkpoints/Images/merged_model/renamed/0.99_0.01",
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -246,6 +243,13 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
     # Collect all results
     all_results = {}
     
+    textvqa_ocr_res = Path(__file__).parent / "textvqa_ocr_results.json"
+    if textvqa_ocr_res.exists():
+        with open(textvqa_ocr_res, "r", encoding="utf-8") as f:
+            textvqa_ocr_results = json.load(f)
+    else:
+        textvqa_ocr_results = {}
+        print(f"Warning: OCR results file {textvqa_ocr_res} not found. Skipping OCR results for TextVQA.")    
     # Process each dataset
     for dataset_name, test_dataset in test_datasets.items():
         print(f"Running inference on {dataset_name}...")
@@ -282,9 +286,15 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
                 # TextVQA answers is a list of strings, filter out empty ones
                 answers = [answer.strip() for answer in data['answers'] if answer.strip()]
                 question_id = str(data['question_id'])
-                # paddle_results = get_ocr_result(image)
-                # if paddle_results:
-                #     print(f"Image OCR results for {question_id}: {paddle_results}")
+                # add paddleocr results if available
+                image_id = str(data['image_id'])
+                if image_id in textvqa_ocr_results:
+                    ocr_data = textvqa_ocr_results[image_id]
+                    if ocr_data:
+                        rec_texts = ocr_data['rec_texts']
+                        question = f"{question}\nOCR results: {', '.join(rec_texts)}"
+                        question = f"{question}\nPlease answer the question using a single word or phrase."
+                    
             elif dataset_name == 'docvqa':
                 # DocVQA answers is a list of strings or None
                 if data['answers'] is not None and isinstance(data['answers'], list):
