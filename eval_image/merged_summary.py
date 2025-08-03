@@ -66,34 +66,34 @@ def convert_model():
             raw_docvqa = stats.get('docvqa_accuracy', None)
             raw_chartqa = stats.get('chartqa_accuracy', None)
             
-            model_scores['textvqa_accuracy'] = format_score_with_ratio(raw_textvqa, onellm_results['textvqa'])
-            model_scores['docvqa_accuracy'] = format_score_with_ratio(raw_docvqa, onellm_results['docvqa'])
-            model_scores['chartqa_accuracy'] = format_score_with_ratio(raw_chartqa, onellm_results['chartqa'])
+            model_scores['textvqa'] = format_score_with_ratio(raw_textvqa, onellm_results['textvqa'])
+            model_scores['docvqa'] = format_score_with_ratio(raw_docvqa, onellm_results['docvqa'])
+            model_scores['chartqa'] = format_score_with_ratio(raw_chartqa, onellm_results['chartqa'])
         else:
-            model_scores['textvqa_accuracy'] = None
-            model_scores['docvqa_accuracy'] = None
-            model_scores['chartqa_accuracy'] = None
+            model_scores['textvqa'] = None
+            model_scores['docvqa'] = None
+            model_scores['chartqa'] = None
             
-        # Extract perception_score and english_overall from detailed_results
-        model_scores['perception_score'] = None
-        model_scores['english_overall'] = None
+        # Extract mme_perception and ocrbenchv2 from detailed_results
+        model_scores['mme_perception'] = None
+        model_scores['ocrbenchv2'] = None
         
         if 'detailed_results' in data:
             for result in data['detailed_results']:
-                # Extract perception_score from MME results
+                # Extract mme_perception from MME results
                 if result.get('script') == 'eval_mme.py' and 'results' in result:
                     mme_results = result['results'].get('mme', {})
                     raw_perception = mme_results.get('perception_score', None)
-                    model_scores['perception_score'] = format_score_with_ratio(raw_perception, onellm_results['mme_perception'])
+                    model_scores['mme_perception'] = format_score_with_ratio(raw_perception, onellm_results['mme_perception'])
                 
-                # Extract english_overall from OCRBench results
+                # Extract ocrbenchv2 from OCRBench results
                 if result.get('script') == 'eval_ocrbenchv2.py' and 'results' in result:
                     ocr_results = result['results'].get('ocrbenchv2', {})
                     parsed_scores = ocr_results.get('parsed_scores', {})
                     overall_scores = parsed_scores.get('overall_scores', {})
                     raw_english = overall_scores.get('english_overall', None)
-                    model_scores['english_overall'] = format_score_with_ratio(raw_english, onellm_results['ocrbenchv2'])
-        
+                    model_scores['ocrbenchv2'] = format_score_with_ratio(raw_english, onellm_results['ocrbenchv2'])
+
         df_list.append(model_scores)
     
     # Convert to DataFrame and output to CSV
@@ -104,11 +104,11 @@ def convert_model():
         onellm_row = {
             'model_name': 'onellm_baseline',
             'mmlu': f"{onellm_results['mmlu']:.3f}",
-            'textvqa_accuracy': f"{onellm_results['textvqa']:.3f}",
-            'docvqa_accuracy': f"{onellm_results['docvqa']:.3f}",
-            'chartqa_accuracy': f"{onellm_results['chartqa']:.3f}",
-            'perception_score': onellm_results['mme_perception'],  # Keep as is since it's already a large number
-            'english_overall': f"{onellm_results['ocrbenchv2']:.3f}"
+            'textvqa': f"{onellm_results['textvqa']:.3f}",
+            'docvqa': f"{onellm_results['docvqa']:.3f}",
+            'chartqa': f"{onellm_results['chartqa']:.3f}",
+            'mme_perception': onellm_results['mme_perception'],  # Keep as is since it's already a large number
+            'ocrbenchv2': f"{onellm_results['ocrbenchv2']:.3f}"
         }
         
         # Insert onellm_results as the first row
