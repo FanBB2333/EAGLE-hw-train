@@ -26,6 +26,31 @@ def format_score_with_ratio(score, baseline_score):
     return f"{score:.3f}[{ratio_percent:.2f}%]"
 
 
+def format_score_with_color(score, baseline_score, column_name):
+    """Format score with color coding based on ratio for terminal display"""
+    if score is None or baseline_score is None or baseline_score == 0:
+        return str(score)
+    
+    ratio = score / baseline_score
+    ratio_percent = ratio * 100
+    formatted_score = f"{score:.3f}[{ratio_percent:.2f}%]"
+    
+    # Special coloring for mme_perception column: Red for >=100%, no color otherwise
+    if column_name == 'mme_perception':
+        if ratio_percent >= 100:
+            return f"\033[91m{formatted_score}\033[0m"  # Red
+        else:
+            return formatted_score
+    
+    # Color codes for other columns: Red for >150%, Yellow for 120%-150%, no color for <120%
+    if ratio_percent > 150:
+        return f"\033[91m{formatted_score}\033[0m"  # Red
+    elif ratio_percent >= 120:
+        return f"\033[93m{formatted_score}\033[0m"  # Yellow
+    else:
+        return formatted_score
+
+
 def get_model_dirs():
     models_name = [d.name for d in RESULTS_DIR.iterdir() if d.is_dir()]
     # filter the dir names that contains '_'
@@ -102,7 +127,7 @@ def convert_model():
         
         # Add onellm_results as the first row
         onellm_row = {
-            'model_name': 'onellm_baseline',
+            'model_name': 'onellm',
             'mmlu': f"{onellm_results['mmlu']:.3f}",
             'textvqa': f"{onellm_results['textvqa']:.3f}",
             'docvqa': f"{onellm_results['docvqa']:.3f}",
@@ -127,4 +152,83 @@ if __name__ == "__main__":
     df = convert_model()
     if df is not None:
         print("\nSummary of extracted scores:")
-        print(df.to_string(index=False))
+        
+        # Create a colored version for terminal display
+        df_display = df.copy()
+        
+        # First, let's get the maximum width for each column for proper alignment
+        col_widths = {}
+        for col in df.columns:
+            col_widths[col] = max(len(col), max(len(str(val)) for val in df[col] if val is not None))
+        
+        # Apply color formatting to all columns except model_name
+        for index, row in df.iterrows():
+            if index == 0:  # Skip the baseline row
+                continue
+                
+            for col in df.columns:
+                if col == 'model_name':
+                    continue
+                    
+                # Extract the original score from the formatted string
+                value = row[col]
+                if value is None or value == 'None':
+                    continue
+                    
+                try:
+                    # Parse the score from formatted string like "0.235[101.50%]"
+                    if '[' in str(value) and ']' in str(value):
+                        score_str = str(value).split('[')[0]
+                        score = float(score_str)
+                        
+                        # Get baseline score for this column
+                        baseline_score = None
+                        if col == 'mmlu':
+                            baseline_score = onellm_results['mmlu']
+                        elif col == 'textvqa':
+                            baseline_score = onellm_results['textvqa']
+                        elif col == 'docvqa':
+                            baseline_score = onellm_results['docvqa']
+                        elif col == 'chartqa':
+                            baseline_score = onellm_results['chartqa']
+                        elif col == 'mme_perception':
+                            baseline_score = onellm_results['mme_perception']
+                        elif col == 'ocrbenchv2':
+                            baseline_score = onellm_results['ocrbenchv2']
+                        
+                        if baseline_score is not None:
+                            colored_value = format_score_with_color(score, baseline_score, col)
+                            df_display.at[index, col] = colored_value
+                except (ValueError, IndexError):
+                    # If parsing fails, keep original value
+                    pass
+        
+        # Custom formatting to handle ANSI color codes properly
+        def print_aligned_table(df):
+            # Calculate the actual display width of strings (ignoring ANSI codes)
+            def display_len(s):
+                # Remove ANSI escape sequences for length calculation
+                import re
+                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                return len(ansi_escape.sub('', str(s)))
+            
+            # Calculate column widths based on visible content
+            widths = {}
+            for col in df.columns:
+                widths[col] = max(len(col), max(display_len(str(val)) for val in df[col] if val is not None))
+            
+            # Print header
+            header = "  ".join(col.ljust(widths[col]) for col in df.columns)
+            print(header)
+            
+            # Print rows
+            for _, row in df.iterrows():
+                formatted_row = []
+                for col in df.columns:
+                    val = str(row[col]) if row[col] is not None else "None"
+                    # Calculate padding needed (accounting for ANSI codes)
+                    padding = widths[col] - display_len(val)
+                    formatted_row.append(val + " " * padding)
+                print("  ".join(formatted_row))
+        
+        print_aligned_table(df_display)
