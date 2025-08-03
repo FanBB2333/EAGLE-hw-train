@@ -19,7 +19,7 @@ images/*
 .idea
 *.swp
 .github
-.vscode
+# .vscode
 
 # Other
 .DS_Store
