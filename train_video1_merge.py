@@ -495,6 +495,9 @@ def train(attn_implementation=None):
         #         if 'vision_tower.encoder.layers.' + str(layer_num) + '.' in name:
         #             param.requires_grad = False
     
+    # model.requires_grad_(False)
+    # model.model.vision_tower.requires_grad_(True)
+    # model.model.mm_projector.requires_grad_(True)
     print('requires_grad')
     for name, param in model.named_parameters():
         if param.requires_grad is True:
