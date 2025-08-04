@@ -7,14 +7,24 @@ Usage Examples:
     # Run ActivityNetQA evaluation only
     python eval_video_all.py --datasets acqa
     
-    # Run multiple evaluations (when more datasets are added)
-    python eval_video_all.py --datasets acqa,mvbench
+    # Run eval_video_qwen datasets
+    python eval_video_all.py --datasets charades,mvbench,activitynet
     
-    # Run all evaluations with custom model
-    python eval_video_all.py --datasets all --model_path /path/to/model
+    # Run all evaluations
+    python eval_video_all.py --datasets all
     
-    # Use custom output directory
-    python eval_video_all.py --datasets acqa --output_dir ./my_results
+    # Use custom model and output directory
+    python eval_video_all.py --datasets charades --model_path /path/to/model --output_dir ./my_results
+
+Supported Datasets:
+    - acqa: ActivityNetQA (from eval_acqa.py)
+    - activitynet: ActivityNet Captions (from eval_video_qwen.py)
+    - breakfast: Breakfast Actions (from eval_video_qwen.py)
+    - charades: Charades Actions (from eval_video_qwen.py)
+    - qvhighlights: QV Highlights (from eval_video_qwen.py)
+    - valor: VALOR32K (from eval_video_qwen.py)
+    - youcook2: YouCook2 (from eval_video_qwen.py)
+    - mvbench: MVBench (from eval_video_qwen.py)
 
 Features:
     - Automatic result saving with timestamps and metadata
@@ -51,7 +61,9 @@ def parse_args():
     parser.add_argument(
         "--datasets", 
         default="all",
-        help="Datasets to evaluate. Options: 'all', 'acqa', or comma-separated list (e.g., 'acqa,mvbench'). Current available: acqa (ActivityNetQA)"
+        help="Datasets to evaluate. Options: 'all', 'acqa', or comma-separated list. "
+             "Available datasets: acqa (ActivityNetQA), activitynet, breakfast, charades, "
+             "qvhighlights, valor, youcook2, mvbench"
     )
     parser.add_argument(
         "--gpus", 
@@ -80,9 +92,8 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
         # Import evaluation functions dynamically when needed
         if script_name == "eval_acqa.py":
             from eval_acqa import evaluate_with_results
-        # Add more evaluation scripts here as they become available
-        # elif script_name == "eval_mvbench.py":
-        #     from eval_mvbench import evaluate_with_results
+        elif script_name == "eval_video_qwen.py":
+            from eval_video_qwen import evaluate_with_results
         else:
             return {
                 'script': script_name,
@@ -193,6 +204,22 @@ def save_results_to_file(results, args):
                     "valid_predictions": acqa_data.get('valid_predictions'),
                     "output_file": acqa_data.get('output_file')
                 }
+            elif script_name == 'eval_video_qwen' and isinstance(result['results'], dict):
+                # Extract eval_video_qwen specific stats
+                qwen_data = result['results']
+                summary_stats[script_name] = {
+                    "total_tasks": qwen_data.get('total_tasks', 0),
+                    "successful_tasks": len(qwen_data.get('successful_tasks', [])),
+                    "failed_tasks": len(qwen_data.get('failed_tasks', [])),
+                    "success_rate": qwen_data.get('success_rate', 0.0),
+                    "tasks_evaluated": qwen_data.get('successful_tasks', [])
+                }
+                
+                # Add individual task statistics if available
+                if 'summary_statistics' in qwen_data:
+                    for task, task_stats in qwen_data['summary_statistics'].items():
+                        summary_stats[f"{script_name}_{task}"] = task_stats
+                        
             elif isinstance(result['results'], dict):
                 # Extract general stats for other evaluations
                 stats = {}
@@ -250,20 +277,24 @@ def run_all(args):
     # Define mapping between dataset names and script files
     dataset_scripts = {
         "acqa": "eval_acqa.py",
-        # Add more datasets here as they become available
-        # "mvbench": "eval_mvbench.py",
-        # "youcook2": "eval_youcook2.py",
-        # "charades": "eval_charades.py",
+        # eval_video_qwen datasets
+        "activitynet": "eval_video_qwen.py",
+        "breakfast": "eval_video_qwen.py", 
+        "charades": "eval_video_qwen.py",
+        "qvhighlights": "eval_video_qwen.py",
+        "valor": "eval_video_qwen.py",
+        "youcook2": "eval_video_qwen.py",
+        "mvbench": "eval_video_qwen.py",
     }
     
     eval_tasks = []  # List of (script, datasets_for_script) tuples
     
     # Parse datasets argument
     if args.datasets.lower() == "all":
-        # Add all available scripts
+        # Add all available scripts with their respective datasets
         eval_tasks = [
-            ("eval_acqa.py", None),
-            # Add more as they become available
+            ("eval_acqa.py", ["acqa"]),
+            ("eval_video_qwen.py", ["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2", "mvbench"]),
         ]
     else:
         # Parse comma-separated dataset names
@@ -282,8 +313,7 @@ def run_all(args):
         
         # Convert to eval_tasks format
         for script, datasets_list in script_datasets.items():
-            # For now, all scripts don't need specific dataset parameters
-            eval_tasks.append((script, None))
+            eval_tasks.append((script, datasets_list))
     
     if not eval_tasks:
         print("No evaluation scripts to run")
@@ -333,6 +363,39 @@ def run_all(args):
                         print(f"    {i+1}. Q: {sample['question'][:100]}...")
                         print(f"       A: {sample['answer']}")
                         print(f"       P: {sample['prediction']}")
+                        
+            elif result['script'] == 'eval_video_qwen.py' and isinstance(result['results'], dict):
+                # Special formatting for eval_video_qwen results
+                qwen_results = result['results']
+                print(f"Video Qwen Evaluation Results:")
+                print(f"  Total Tasks: {qwen_results.get('total_tasks', 'N/A')}")
+                print(f"  Successful Tasks: {len(qwen_results.get('successful_tasks', []))}")
+                print(f"  Failed Tasks: {len(qwen_results.get('failed_tasks', []))}")
+                print(f"  Success Rate: {qwen_results.get('success_rate', 0):.2%}")
+                
+                # Show successful tasks
+                if qwen_results.get('successful_tasks'):
+                    print(f"  Completed Tasks: {', '.join(qwen_results['successful_tasks'])}")
+                
+                # Show failed tasks if any
+                if qwen_results.get('failed_tasks'):
+                    print(f"  Failed Tasks: {', '.join(qwen_results['failed_tasks'])}")
+                
+                # Show detailed results for each task
+                if 'detailed_results' in qwen_results:
+                    for task, task_data in qwen_results['detailed_results'].items():
+                        if isinstance(task_data, dict) and task_data.get('status') == 'success':
+                            predictions = task_data.get('total_predictions', 0)
+                            print(f"    {task}: {predictions} predictions")
+                            
+                            # Show sample prediction
+                            if 'sample_predictions' in task_data and task_data['sample_predictions']:
+                                sample = task_data['sample_predictions'][0]
+                                print(f"      Sample Q: {sample.get('question', 'N/A')[:80]}...")
+                                print(f"      Sample P: {sample.get('prediction', 'N/A')[:80]}...")
+                        elif isinstance(task_data, dict) and task_data.get('status') == 'error':
+                            print(f"    {task}: ERROR - {task_data.get('error', 'Unknown error')}")
+                            
             else:
                 # Default formatting for other results
                 if isinstance(result['results'], dict):

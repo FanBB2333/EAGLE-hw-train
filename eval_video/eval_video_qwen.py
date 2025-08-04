@@ -631,6 +631,248 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
     print("All distributed tasks completed!")
     print(f"{'='*50}")
 
+def evaluate_with_results(model_path: str, datasets=None):
+    """
+    Wrapper function for compatibility with eval_video_all.py
+    
+    Args:
+        model_path: Path to the pretrained model
+        datasets: List of dataset names to evaluate. If None, evaluates all available tasks.
+    
+    Returns:
+        Dictionary containing evaluation results with status and metrics
+    """
+    try:
+        # Create mock args object similar to parse_eval_args
+        args = argparse.Namespace()
+        args.model_path = model_path
+        args.model_name = "eagle"
+        args.device = "cuda"
+        args.output_path = None  # Will use default
+        args.conv_template = "llama3"
+        args.use_cache = None
+        args.batch_size = 1
+        args.gen_kwargs = ""
+        args.model_args = ""
+        args.distributed = False
+        
+        # Determine which tasks to run
+        if datasets is None or len(datasets) == 0:
+            # Run all available tasks
+            tasks_to_run = AVAILABLE_TASKS.copy()
+        else:
+            # Validate and filter requested datasets
+            tasks_to_run = []
+            for dataset in datasets:
+                if dataset.lower() in AVAILABLE_TASKS:
+                    tasks_to_run.append(dataset.lower())
+                else:
+                    print(f"Warning: Dataset '{dataset}' not available in eval_video_qwen. Available: {AVAILABLE_TASKS}")
+        
+        if not tasks_to_run:
+            return {
+                'status': 'error',
+                'error': f'No valid tasks to run. Available tasks: {AVAILABLE_TASKS}'
+            }
+        
+        # Store original task arg
+        args.task = ','.join(tasks_to_run)
+        
+        print(f"Starting eval_video_qwen evaluation for tasks: {tasks_to_run}")
+        print(f"Model path: {model_path}")
+        print("-" * 50)
+        
+        # Results container
+        results = {}
+        successful_tasks = []
+        failed_tasks = []
+        
+        # Run evaluation for each task
+        for task in tasks_to_run:
+            print(f"\nEvaluating task: {task}")
+            try:
+                # Set current task
+                args.task = task
+                
+                # Run single task evaluation
+                evaluate_single_task(args=args, task=task)
+                
+                # Check if output file was created and read results
+                output_dir = CURRENT_DIR.parent / "output" / "3b"
+                output_file = output_dir / f"{task}_output.json"
+                
+                if output_file.exists():
+                    with open(output_file, 'r') as f:
+                        task_results = json.load(f)
+                    
+                    # Process results for this task
+                    task_metrics = process_task_results(task, task_results)
+                    results[task] = task_metrics
+                    successful_tasks.append(task)
+                    
+                    print(f"✓ Completed {task}: {len(task_results)} predictions generated")
+                else:
+                    print(f"✗ Output file not found for {task}: {output_file}")
+                    failed_tasks.append(task)
+                    results[task] = {
+                        'status': 'error',
+                        'error': 'Output file not generated'
+                    }
+                    
+            except Exception as e:
+                print(f"✗ Error evaluating {task}: {str(e)}")
+                failed_tasks.append(task)
+                results[task] = {
+                    'status': 'error', 
+                    'error': str(e)
+                }
+        
+        # Compile final results
+        final_results = {
+            'status': 'completed',
+            'model_path': model_path,
+            'tasks_requested': tasks_to_run,
+            'successful_tasks': successful_tasks,
+            'failed_tasks': failed_tasks,
+            'total_tasks': len(tasks_to_run),
+            'success_rate': len(successful_tasks) / len(tasks_to_run) if tasks_to_run else 0,
+            'detailed_results': results
+        }
+        
+        # Add summary statistics
+        summary_stats = {}
+        for task, task_data in results.items():
+            if isinstance(task_data, dict) and 'total_predictions' in task_data:
+                summary_stats[task] = {
+                    'total_predictions': task_data['total_predictions'],
+                    'output_file': task_data.get('output_file')
+                }
+        
+        if summary_stats:
+            final_results['summary_statistics'] = summary_stats
+        
+        print(f"\n📊 Evaluation Summary:")
+        print(f"   - Total tasks: {len(tasks_to_run)}")
+        print(f"   - Successful: {len(successful_tasks)}")
+        print(f"   - Failed: {len(failed_tasks)}")
+        print(f"   - Success rate: {final_results['success_rate']:.2%}")
+        
+        return final_results
+        
+    except Exception as e:
+        print(f"❌ Critical error in eval_video_qwen: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'status': 'error',
+            'error': str(e),
+            'model_path': model_path
+        }
+
+def process_task_results(task: str, task_results):
+    """
+    Process raw task results and extract relevant metrics
+    
+    Args:
+        task: Name of the task
+        task_results: List of prediction results
+    
+    Returns:
+        Dictionary with processed metrics
+    """
+    if not task_results:
+        return {
+            'status': 'error',
+            'error': 'No results generated'
+        }
+    
+    # Basic statistics
+    total_predictions = len(task_results)
+    
+    # Extract sample predictions for inspection
+    sample_predictions = []
+    for i, result in enumerate(task_results[:5]):  # First 5 samples
+        sample = {
+            'index': i,
+            'question': result.get('question', 'N/A'),
+            'prediction': result.get('prediction', 'N/A'),
+            'data_path': result.get('data_path', 'N/A')
+        }
+        
+        # Add task-specific fields
+        if 'answer' in result:
+            sample['answer'] = result['answer']
+        if 'duration' in result:
+            sample['duration'] = result['duration']
+            
+        sample_predictions.append(sample)
+    
+    # Determine output file path
+    output_dir = CURRENT_DIR.parent / "output" / "3b"
+    output_file = str(output_dir / f"{task}_output.json")
+    
+    return {
+        'status': 'success',
+        'total_predictions': total_predictions,
+        'output_file': output_file,
+        'sample_predictions': sample_predictions,
+        'task_specific_info': get_task_specific_info(task, task_results)
+    }
+
+def get_task_specific_info(task: str, task_results):
+    """
+    Extract task-specific information and statistics
+    
+    Args:
+        task: Name of the task
+        task_results: List of prediction results
+    
+    Returns:
+        Dictionary with task-specific metrics
+    """
+    info = {'task': task}
+    
+    if not task_results:
+        return info
+    
+    # Sample result for analysis
+    sample = task_results[0] if task_results else {}
+    
+    if task == "activitynet":
+        info['description'] = "ActivityNet Captions - Video captioning and temporal localization"
+        # Extract duration statistics if available
+        durations = [r.get('duration', 0) for r in task_results if 'duration' in r]
+        if durations:
+            info['avg_duration'] = sum(durations) / len(durations)
+            info['max_duration'] = max(durations)
+            info['min_duration'] = min(durations)
+    
+    elif task == "breakfast":
+        info['description'] = "Breakfast Actions - Step-by-step action recognition"
+        # Count action predictions
+        action_count = len([r for r in task_results if 'prediction' in r and len(r['prediction']) > 0])
+        info['predictions_with_actions'] = action_count
+    
+    elif task == "charades":
+        info['description'] = "Charades Actions - Action localization and description"
+        # Extract answer format info
+        answers_with_timing = len([r for r in task_results if 'answer' in r and isinstance(r['answer'], list)])
+        info['answers_with_timing'] = answers_with_timing
+    
+    elif task == "qvhighlights":
+        info['description'] = "QV Highlights - Query-based video highlight detection"
+    
+    elif task == "valor":
+        info['description'] = "VALOR32K - Video and language understanding"
+    
+    elif task == "youcook2":
+        info['description'] = "YouCook2 - Instructional video understanding"
+    
+    elif task == "mvbench":
+        info['description'] = "MVBench - Multi-view video understanding benchmark"
+    
+    return info
+
 if __name__ == "__main__":
     args = parse_eval_args()
     print(args)
