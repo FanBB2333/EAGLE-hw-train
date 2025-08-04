@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 import sys
 sys.path.append('./')
+sys.path.append('../')
 import json
 
 import argparse
@@ -23,15 +24,12 @@ from eagle.conversation import conv_templates, SeparatorStyle
 # except ImportError:
 #     eval_logger.error("Please add a symbolic link pointing to the eagle folder of repo ")
 
-from eval.dataset._3dllm import ThreeDLLMDataset
-from eval.utils import DEFAULT_POINT_TOKEN
-
 def parse_eval_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Video/finetune/pr_llm/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava", 
+        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02", 
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -190,7 +188,6 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         question = data.question
         answer = data.answer
 
-        # DEFAULT_POINT_TOKEN 是点云的，视频的可能需要重写，可以参考如下方式修改prompt
         if DEFAULT_IMAGE_TOKEN not in question:
             question = DEFAULT_IMAGE_TOKEN + '\n' + question
         

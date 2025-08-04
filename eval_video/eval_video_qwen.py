@@ -216,12 +216,19 @@ def get_image_tensor_timeout(data, image_processor, model, args, queue):
         queue.put(("success", image_tensor))
     except Exception as e:
         queue.put(("error", str(e)))
-        
-            
-@torch.no_grad()
-def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
-    # accelerator = Accelerator()
-    modality = 'video'
+
+
+def load_video_model(args, modality='video'):
+    """
+    Load video model with tokenizer and vision processor
+    
+    Args:
+        args: Arguments containing model_path and device
+        modality: Model modality ('video' or 'audio')
+    
+    Returns:
+        tuple: (model, tokenizer, image_processor, modality)
+    """
     # base_path = "/home6/fzy/repos/EAGLE/model/LLM/Llama-3.2-3B-Instruct"
     base_path = "./model/LLM/Llama-3.2-3B-Instruct"
 
@@ -269,11 +276,24 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
     image_processor = vision_tower.image_processor.video_processor
 
     model.eval()
+    
+    # Determine modality based on model path
     if 'video' in args.model_path.lower() or '3d' in args.model_path.lower():
         modality = 'video'
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
-    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {task}")
+    
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}")
+    
+    return model, tokenizer, image_processor, modality
+
+            
+@torch.no_grad()
+def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
+    # Load video model using the extracted function
+    model, tokenizer, image_processor, modality = load_video_model(args, modality='video')
+    
+    print(f"Task: {task}")
     # initialize dataset according to task
     ds = get_dataset(task)
     # return
@@ -290,12 +310,6 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
         "answer": "xxx"
     }]
     test_dataloader = ds
-    # test_dataloader = DataLoader(
-    #     ds,
-    #     collate_fn=ds.collate_fn,
-    #     batch_size=1,
-    #     shuffle=False,
-    # )
         
     gen_list = list()
     pbar = tqdm(total=len(test_dataloader), desc="Model Responding")
@@ -409,10 +423,18 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
     pbar.close()
 
 
-@torch.no_grad()
-def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
-    accelerator = Accelerator()
-    modality = 'video'
+def load_video_model_dist(args, accelerator, modality='video'):
+    """
+    Load video model with tokenizer and vision processor for distributed evaluation
+    
+    Args:
+        args: Arguments containing model_path and device
+        accelerator: Accelerator instance for distributed training
+        modality: Model modality ('video' or 'audio')
+    
+    Returns:
+        tuple: (model, tokenizer, image_processor, modality)
+    """
     base_path = "./model/LLM/Llama-3.2-3B-Instruct"
 
     tokenizer = AutoTokenizer.from_pretrained(base_path)
@@ -459,11 +481,26 @@ def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task
 
     model = accelerator.prepare(model)
     model.eval()
+    
+    # Determine modality based on model path
     if 'video' in args.model_path.lower() or '3d' in args.model_path.lower():
         modality = 'video'
     elif 'audio' in args.model_path.lower():
         modality = 'audio'
-    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}, task: {task}")
+    
+    print(f"Modality: {modality}, model type: {type(model)}, pretrained model: {args.model_path}")
+    
+    return model, tokenizer, image_processor, modality
+
+
+@torch.no_grad()
+def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task: str = None) -> None:
+    accelerator = Accelerator()
+    
+    # Load video model using the extracted function
+    model, tokenizer, image_processor, modality = load_video_model_dist(args, accelerator, modality='video')
+    
+    print(f"Task: {task}")
     # initialize dataset according to task
     ds = get_dataset(task)
     test_dataloader = ds
