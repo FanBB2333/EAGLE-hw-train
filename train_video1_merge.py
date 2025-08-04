@@ -1,35 +1,4 @@
-# Copyright 2024 NVIDIA CORPORATION & AFFILIATES
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-# This file is modified from https://github.com/haotian-liu/LLaVA/
-
-# Adopted from https://github.com/lm-sys/FastChat. Below is the original copyright:
-# Adopted from tatsu-lab@stanford_alpaca. Below is the original copyright:
-#    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
-#
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-
+from typing import Dict, Optional, Sequence, List
 import os
 import copy
 from datetime import datetime
@@ -37,8 +6,8 @@ from dataclasses import dataclass, field
 import json
 import logging
 import pathlib
-from typing import Dict, Optional, Sequence, List
-
+import pickle
+import sys
 import torch
 import numpy as np
 
@@ -367,7 +336,11 @@ def train(attn_implementation=None):
             )
 
     model.set_modal('video')
-
+    # save model args to training_args.output_dir/model_args.pkl
+    model_args_path = os.path.join(training_args.output_dir, "model_args.pkl")
+    with open(model_args_path, 'wb') as f:
+        pickle.dump(model_args, f)
+    rank0_print(f"Model arguments saved to {model_args_path}")
     if model_args.vision_tower is not None:
         model.get_model().initialize_vision_modules(
             model_args=model_args,
