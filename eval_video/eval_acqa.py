@@ -21,6 +21,28 @@ from eagle.model.builder import load_pretrained_model
 from eagle.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
 from eagle.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IGNORE_INDEX
 from eagle.conversation import conv_templates, SeparatorStyle
+
+# Import the video model loading function from eval_video_qwen
+try:
+    from eval_video_qwen import load_video_model
+except ImportError:
+    # If import fails, define a fallback function
+    def load_video_model(args, modality='video'):
+        raise ImportError("load_video_model not available, please check eval_video_qwen.py")
+
+def is_qwen_model(model_path: str) -> bool:
+    """
+    Check if the model is a qwen-based model by examining the model path.
+    
+    Args:
+        model_path: Path to the model
+        
+    Returns:
+        bool: True if it's a qwen model, False otherwise
+    """
+    # Check if 'qwen' appears in the model path (case insensitive)
+    model_path_lower = model_path.lower()
+    return 'qwen' in model_path_lower or 'qwen2vl' in model_path_lower
 # except ImportError:
 #     eval_logger.error("Please add a symbolic link pointing to the eagle folder of repo ")
 
@@ -150,15 +172,41 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     if args.output_path:
         args.output_path = os.path.join(args.output_path, model_folder_name)
     
-    tokenizer, model, image_processor, max_length = load_pretrained_model(
-        model_path=args.model_path,
-        model_base=None,
-        model_name=args.model_name
-    )
-    image_processor = image_processor.video_processor
+    modality = 'video'
+    
+    # Check if this is a qwen model and use appropriate loading method
+    if is_qwen_model(args.model_path):
+        print("Detected qwen model, using load_video_model...")
+        try:
+            model, tokenizer, image_processor, modality = load_video_model(args, modality=modality)
+            print(f"Successfully loaded qwen model using load_video_model")
+            # For qwen models, use float16
+            model_dtype = torch.float16
+        except Exception as e:
+            print(f"Failed to load qwen model with load_video_model: {e}")
+            print("Falling back to traditional load_pretrained_model...")
+            # Fall back to traditional method
+            tokenizer, model, image_processor, max_length = load_pretrained_model(
+                model_path=args.model_path,
+                model_base=None,
+                model_name=args.model_name
+            )
+            image_processor = image_processor.video_processor
+            # For fallback, use float16 (as original code used)
+            model_dtype = torch.float16
+    else:
+        print("Using traditional load_pretrained_model...")
+        # Use traditional loading method for non-qwen models
+        tokenizer, model, image_processor, max_length = load_pretrained_model(
+            model_path=args.model_path,
+            model_base=None,
+            model_name=args.model_name
+        )
+        image_processor = image_processor.video_processor
+        # For traditional models, use float16 (as original code used)
+        model_dtype = torch.float16
     print(f"image processor: {type(image_processor)}")
     model.eval()
-    modality = 'video'
     test_dataset = load_dataset("lmms-lab/ActivityNetQA")['test']
     test_dataloader = DataLoader(
         test_dataset,
@@ -176,7 +224,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             model_cfg=model.config,
             modality=modality,
         )
-        image_tensor = image_tensor.to(dtype=torch.float16, device=args.device)
+        image_tensor = image_tensor.to(dtype=model_dtype, device=args.device)
                 # image = image_full['pixel_values_videos']
                 # video_grid_thw = image_full['video_grid_thw']
         if hasattr(image_tensor, "video_grid_thw"):
