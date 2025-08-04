@@ -96,6 +96,7 @@ class ModelArguments:
     mlp_smoe: Optional[bool] = field(default=False)
     clip_smoe: Optional[bool] = field(default=False)
     scales: Optional[str] = field(default=None)
+    merged_dir: Optional[str] = field(default="/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/merged_model/0.99_0.01/image")
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -404,7 +405,8 @@ def train(attn_implementation=None):
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
 
-    merged_dir = "/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/merged_model/0.99_0.01/image"
+    merged_dir = model_args.merged_dir
+    print(f"merged dir: {merged_dir}")
 
     tensors = {}
 
