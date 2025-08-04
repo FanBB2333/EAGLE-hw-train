@@ -28,6 +28,28 @@ from eagle.conversation import conv_templates, SeparatorStyle
 # import safe load
 from safetensors.torch import safe_open
 from train_video1 import ModelArguments
+
+# Import the video model loading function from eval_video_qwen
+try:
+    from eval_video.eval_video_qwen import load_video_model
+except ImportError:
+    # If import fails, define a fallback function
+    def load_video_model(args, modality='video'):
+        raise ImportError("load_video_model not available, please check eval_video_qwen.py")
+
+def is_qwen_model(model_path: str) -> bool:
+    """
+    Check if the model is a qwen-based model by examining the model path.
+    
+    Args:
+        model_path: Path to the model
+        
+    Returns:
+        bool: True if it's a qwen model, False otherwise
+    """
+    # Check if 'qwen' appears in the model path (case insensitive)
+    model_path_lower = model_path.lower()
+    return 'qwen' in model_path_lower or 'qwen2vl' in model_path_lower
 # except ImportError:
 #     eval_logger.error("Please add a symbolic link pointing to the eagle folder of repo ")
 
@@ -154,88 +176,40 @@ def activitynetqa_doc_to_visual(doc):
 @torch.no_grad()
 def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     modality = 'video'
-    base_path = "./model/LLM/Llama-3.2-3B-Instruct"
-
-    tokenizer = AutoTokenizer.from_pretrained(base_path)
-    model = EagleLlamaForCausalLM.from_pretrained(
-        base_path,
-        low_cpu_mem_usage=True,
-    )
-    smart_tokenizer_and_embedding_resize(
-        special_tokens_dict=dict(pad_token="<pad>"),
-        tokenizer=tokenizer,
-        model=model,
-    )
     
-    model_args_path = os.path.join(args.model_path, "model_args.pkl")
-    if os.path.exists(model_args_path):
-        with open(model_args_path, 'rb') as f:
-            model_args = pickle.load(f)
-    model.get_model().initialize_vision_modules(
-        model_args=model_args,
-        fsdp="",
-        modality = 'video'
-    )
-    tensors = {}
-
-    safetensor_paths = [
-        os.path.join(args.model_path, "model-00001-of-00002.safetensors"),
-        os.path.join(args.model_path, "model-00002-of-00002.safetensors"),
-        # "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle/model-00001-of-00002.safetensors",
-        # "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle/model-00002-of-00002.safetensors",
-    ]
-    
-    for safetensor_path in safetensor_paths:
-        with safe_open(safetensor_path, framework="pt", device='cpu') as f:
-            for k in f.keys():
-                if k in tensors:
-                    print(f"警告：键 {k} 在多个safetensor文件中出现，后面的值会覆盖前面的值")
-                # print(k)
-                # if 'vision_tower' in k:
-                #     continue
-                tensors[k] = f.get_tensor(k)
-    
-    # tensors = {k: v.to(torch.bfloat16) for k, v in tensors.items() if v is not None}
-    model.load_state_dict(tensors, strict=False)
-    # change model dtype to bfloat16
-    model = model.to(torch.bfloat16)
-    model.cuda()
-    # 替换模型参数
-    # for name, param in model.named_parameters():
-    #     if "vision_tower" not in name:
-    #         if 'mm_projector' in name:
-    #             print(1)
-    #         if name in tensors.keys():
-    #             if tensors[name].shape == param.data.shape:
-    #                 original_requires_grad = copy.deepcopy(param.requires_grad)  # 保存原始的requires_grad状态
-    #                 original_device = copy.deepcopy(param.device)
-    #                 original_dtype = copy.deepcopy(param.dtype)
-    #                 param.data.copy_(tensors[name])
-    #                 param.requires_grad = original_requires_grad  # 恢复requires_grad状态
-    #                 param = param.to(original_device, dtype=original_dtype)
-    #                 print(f"Loaded {name} from safetensor with shape {tensors[name].shape} to model with shape {param.data.shape}")
-    #             else:
-    #                 print(f"Shape mismatch for {name}: {tensors[name].shape} != {param.data.shape}")
-    #         else:
-    #             print(f"Key {name} not found in safetensor")
-
-    # projector_path = "/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/disk2/Video/pretrain/pretrain-video-llama3.2-3b-fzy-qwen2vl-eagle/mm_projector.bin"
-    # mm_projector_weights = torch.load(projector_path, map_location='cpu')
-    # mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
-    # model.load_state_dict(mm_projector_weights, strict=False)
-
-    vision_tower = model.get_vision_tower()
-    image_processor = vision_tower.image_processor.video_processor
-
-    # load state dict from args.model_path
-    # tokenizer, model, image_processor, max_length = load_pretrained_model(
-    #     model_path=args.model_path,
-    #     model_base=None,
-    #     model_name=args.model_name,
-    #     modal=modality
-    # )
-    
-    # image_processor = image_processor.video_processor
+    # Check if this is a qwen model and use appropriate loading method
+    if is_qwen_model(args.model_path):
+        print("Detected qwen model, using load_video_model...")
+        try:
+            model, tokenizer, image_processor, modality = load_video_model(args, modality=modality)
+            print(f"Successfully loaded qwen model using load_video_model")
+            # For qwen models, use float16
+            model_dtype = torch.float16
+        except Exception as e:
+            print(f"Failed to load qwen model with load_video_model: {e}")
+            print("Falling back to traditional load_pretrained_model...")
+            # Fall back to traditional method
+            tokenizer, model, image_processor, max_length = load_pretrained_model(
+                model_path=args.model_path,
+                model_base=None,
+                model_name=args.model_name,
+                modal=modality
+            )
+            image_processor = image_processor.video_processor
+            # For fallback, use bfloat16
+            model_dtype = torch.bfloat16
+    else:
+        print("Using traditional load_pretrained_model...")
+        # Use traditional loading method for non-qwen models
+        tokenizer, model, image_processor, max_length = load_pretrained_model(
+            model_path=args.model_path,
+            model_base=None,
+            model_name=args.model_name,
+            modal=modality
+        )
+        image_processor = image_processor.video_processor
+        # For traditional models, use bfloat16
+        model_dtype = torch.bfloat16
     print(f"image processor: {type(image_processor)}")
     model.eval()
     test_dataset = load_dataset("lmms-lab/ActivityNetQA")['test']
@@ -255,7 +229,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
             model_cfg=model.config,
             modality=modality,
         )
-        image_tensor = image_tensor.to(dtype=torch.bfloat16, device=args.device)
+        image_tensor = image_tensor.to(dtype=model_dtype, device=args.device)
                 # image = image_full['pixel_values_videos']
                 # video_grid_thw = image_full['video_grid_thw']
         if hasattr(image_tensor, "video_grid_thw"):
