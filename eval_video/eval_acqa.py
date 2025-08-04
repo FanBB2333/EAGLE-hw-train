@@ -6,6 +6,7 @@ import sys
 sys.path.append('./')
 sys.path.append('../')
 import json
+from pathlib import Path
 
 import argparse
 import logging
@@ -156,7 +157,8 @@ def custom_collate_fn(batch):
     return batch  # 修改为你自己的拼接逻辑
 
 
-video_base = "/home1/hxl/disk2/EAGLE/.cache/huggingface/activitynetqa/all_test"
+video_base = str(Path("~/.cache/huggingface/activitynetqa/all_test").expanduser())
+
 def activitynetqa_doc_to_visual(doc):
     video_path = os.path.join(video_base, f"v_{doc['video_name']}.mp4")
     extensions = ["mp4", "webm", "mkv"]
