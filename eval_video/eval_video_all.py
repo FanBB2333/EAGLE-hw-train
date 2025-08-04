@@ -27,7 +27,8 @@ Supported Datasets:
     - mvbench: MVBench (from eval_video_qwen.py)
 
 Features:
-    - Automatic result saving with timestamps and metadata
+    - Automatic result saving with timestamps and metadata in model-specific directories
+    - Dataset-specific output directories: eval_video/res_folder/videos/{model_name}/{dataset}/
     - Support for sequential and parallel execution
     - Detailed result formatting and summary statistics
     - Integration with multiple evaluation scripts
@@ -154,28 +155,25 @@ def save_results_to_file(results, args):
     """Save evaluation results to a JSON file with metadata"""
     import datetime
     
-    # Create output directory
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos"
+    # Create dataset-specific output directory for this evaluation
+    model_name = os.path.basename(args.model_path.rstrip('/'))
     
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.output_dir:
+        base_output_dir = Path(args.output_dir)
+    else:
+        base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
+    
+    # Create dataset-specific subdirectory
+    datasets_str = args.datasets.replace(",", "_")
+    dataset_output_dir = base_output_dir / datasets_str
+    dataset_output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate timestamp for filename
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = os.path.basename(args.model_path)
-    # Truncate model name if too long
-    if len(model_name) > 30:
-        model_name = model_name[:27] + "..."
     
-    datasets_str = args.datasets.replace(",", "_")
-    if len(datasets_str) > 20:
-        datasets_str = datasets_str[:17] + "..."
-    
-    # Create filename
-    filename = f"eval_{model_name}_{datasets_str}_{timestamp}.json"
-    output_file = output_dir / filename
+    # Create simplified filename since directory structure now contains model and dataset info
+    filename = f"eval_results_{timestamp}.json"
+    output_file = dataset_output_dir / filename
     
     # Prepare metadata
     metadata = {
@@ -183,6 +181,7 @@ def save_results_to_file(results, args):
         "model_path": args.model_path,
         "model_name": model_name,
         "datasets_evaluated": args.datasets,
+        "output_directory": str(dataset_output_dir),
         "sequential_mode": args.sequential,
         "gpu_devices": args.gpus,
         "total_evaluations": len(results),
@@ -249,6 +248,7 @@ def save_results_to_file(results, args):
         
         print(f"\n📁 Results saved to: {output_file}")
         print(f"📊 Summary:")
+        print(f"   - Output directory: {dataset_output_dir}")
         print(f"   - Total evaluations: {metadata['total_evaluations']}")
         print(f"   - Successful: {metadata['successful_evaluations']}")
         print(f"   - Failed: {metadata['failed_evaluations']}")
