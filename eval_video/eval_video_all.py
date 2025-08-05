@@ -41,6 +41,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))  # Add parent directory to path
 from pathlib import Path
 import json
+from train_video1 import ModelArguments
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Parse arguments first to set environment variables early
