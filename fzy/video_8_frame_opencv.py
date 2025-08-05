@@ -57,7 +57,7 @@ def process_videos(input_folder, output_folder):
         list(tqdm(pool.imap(process_video, tasks), total=len(tasks)))
 
 if __name__ == "__main__":
-    input_folder = "/home2/fzy/raw_videos"  # 替换为你的视频文件夹路径
-    output_folder = "/home2/fzy/raw_videos_8"  # 替换为你的输出文件夹路径
+    input_folder = "/home2/fzy/datasets/lmms-lab/ActivityNetQA/all_test"  # 替换为你的视频文件夹路径
+    output_folder = "/home2/fzy/datasets/lmms-lab/ActivityNetQA/all_test_8"  # 替换为你的输出文件夹路径
     os.makedirs(output_folder, exist_ok=True)
     process_videos(input_folder, output_folder)

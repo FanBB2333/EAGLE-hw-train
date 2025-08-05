@@ -157,7 +157,8 @@ def custom_collate_fn(batch):
     return batch  # 修改为你自己的拼接逻辑
 
 
-video_base = str(Path("~/.cache/huggingface/activitynetqa/all_test").expanduser())
+# video_base = str(Path("~/.cache/huggingface/activitynetqa/all_test").expanduser())
+video_base = str(Path("~/.cache/huggingface/activitynetqa/all_test_8").expanduser())
 
 def activitynetqa_doc_to_visual(doc):
     video_path = os.path.join(video_base, f"v_{doc['video_name']}.mp4")
@@ -166,6 +167,7 @@ def activitynetqa_doc_to_visual(doc):
         modified_path = video_path.replace("mp4", ext)
         if os.path.exists(modified_path):
             return [modified_path]
+    return None
     sys.exit(f"video path:{video_path} does not exist, please check")
     
 @torch.no_grad()
@@ -221,6 +223,9 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     for i, data in enumerate(test_dataloader):
         data = data[0]
         video_file = activitynetqa_doc_to_visual(data)
+        if video_file is None:
+            print(f"Skipping {data['video_name']} due to missing video file")
+            continue
         image_tensor = process_images(
             images=video_file,
             image_processor=image_processor,
