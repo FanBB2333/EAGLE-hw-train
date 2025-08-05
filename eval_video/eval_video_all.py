@@ -104,8 +104,14 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
         # Call the evaluation function directly
         print(f"Starting evaluation for {script_name}...")
         
-        # Call the evaluation function
-        results = evaluate_with_results(model_path, datasets)
+        # Calculate output path for eval_video_qwen
+        if script_name == "eval_video_qwen.py":
+            model_name = os.path.basename(model_path.rstrip('/'))
+            base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
+            results = evaluate_with_results(model_path, datasets, str(base_output_dir))
+        else:
+            # For other scripts (like eval_acqa), call without output_path
+            results = evaluate_with_results(model_path, datasets)
         
         print(f"✓ {script_name} completed successfully")
         

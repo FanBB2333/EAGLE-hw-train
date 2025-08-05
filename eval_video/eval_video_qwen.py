@@ -23,6 +23,7 @@ from train_video1 import ModelArguments
 
 eval_logger = logging.getLogger("eval_video")
 CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 try:
     from eagle.model import *
@@ -296,6 +297,16 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
     print(f"Task: {task}")
     # initialize dataset according to task
     ds = get_dataset(task)
+    
+    # Determine output directory - use unified structure if available in args
+    if hasattr(args, 'base_output_dir') and args.base_output_dir:
+        output_dir = args.base_output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        # Fallback to old structure
+        output_dir = CURRENT_DIR.parent / "output" / "3b"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
     # return
     
     # time.sleep(100)
@@ -418,7 +429,7 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
             **data,
             "prediction": text_outputs[0],
         })
-        with open(str(CURRENT_DIR.parent / "output/3b" / f"{task}_output.json"), "w") as f:
+        with open(str(output_dir / f"{task}_output.json"), "w") as f:
             json.dump(gen_list, f, indent=4)
     pbar.close()
 
@@ -504,6 +515,16 @@ def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task
     # initialize dataset according to task
     ds = get_dataset(task)
     test_dataloader = ds
+    
+    # Determine output directory - use unified structure if available in args
+    if hasattr(args, 'base_output_dir') and args.base_output_dir:
+        output_dir = args.base_output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        # Fallback to old structure
+        output_dir = CURRENT_DIR.parent / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
     accelerator.wait_for_everyone()
     with accelerator.split_between_processes(test_dataloader) as batch:
         print(f"Generating {len(batch)} samples")
@@ -607,7 +628,7 @@ def evaluate_dist_single_task(args: Union[argparse.Namespace, None] = None, task
             })
         results = [results]
     gathered = gather_object(results)
-    with open(str(CURRENT_DIR.parent / "output" / f"{task}_output_dist.json"), "w") as f:
+    with open(str(output_dir / f"{task}_output_dist.json"), "w") as f:
         json.dump(gathered, f, indent=4)
 
 
@@ -668,13 +689,14 @@ def evaluate_dist(args: Union[argparse.Namespace, None] = None) -> None:
     print("All distributed tasks completed!")
     print(f"{'='*50}")
 
-def evaluate_with_results(model_path: str, datasets=None):
+def evaluate_with_results(model_path: str, datasets=None, output_path=None):
     """
     Wrapper function for compatibility with eval_video_all.py
     
     Args:
         model_path: Path to the pretrained model
         datasets: List of dataset names to evaluate. If None, evaluates all available tasks.
+        output_path: Optional custom output directory. If None, uses unified structure.
     
     Returns:
         Dictionary containing evaluation results with status and metrics
@@ -685,13 +707,23 @@ def evaluate_with_results(model_path: str, datasets=None):
         args.model_path = model_path
         args.model_name = "eagle"
         args.device = "cuda"
-        args.output_path = None  # Will use default
+        args.output_path = output_path  # Store custom output path
         args.conv_template = "llama3"
         args.use_cache = None
         args.batch_size = 1
         args.gen_kwargs = ""
         args.model_args = ""
         args.distributed = False
+        
+        # Calculate unified output directory if no custom path provided
+        if output_path is None:
+            model_name = os.path.basename(model_path.rstrip('/'))
+            base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
+        else:
+            base_output_dir = Path(output_path)
+        
+        # Store the calculated output directory in args for use by evaluation functions
+        args.base_output_dir = base_output_dir
         
         # Determine which tasks to run
         if datasets is None or len(datasets) == 0:
@@ -734,16 +766,15 @@ def evaluate_with_results(model_path: str, datasets=None):
                 # Run single task evaluation
                 evaluate_single_task(args=args, task=task)
                 
-                # Check if output file was created and read results
-                output_dir = CURRENT_DIR.parent / "output" / "3b"
-                output_file = output_dir / f"{task}_output.json"
+                # Check if output file was created and read results using unified directory
+                output_file = base_output_dir / f"{task}_output.json"
                 
                 if output_file.exists():
                     with open(output_file, 'r') as f:
                         task_results = json.load(f)
                     
                     # Process results for this task
-                    task_metrics = process_task_results(task, task_results)
+                    task_metrics = process_task_results(task, task_results, str(output_file))
                     results[task] = task_metrics
                     successful_tasks.append(task)
                     
@@ -806,13 +837,14 @@ def evaluate_with_results(model_path: str, datasets=None):
             'model_path': model_path
         }
 
-def process_task_results(task: str, task_results):
+def process_task_results(task: str, task_results, output_file: str = None):
     """
     Process raw task results and extract relevant metrics
     
     Args:
         task: Name of the task
         task_results: List of prediction results
+        output_file: Path to the output file where results were saved
     
     Returns:
         Dictionary with processed metrics
@@ -844,9 +876,10 @@ def process_task_results(task: str, task_results):
             
         sample_predictions.append(sample)
     
-    # Determine output file path
-    output_dir = CURRENT_DIR.parent / "output" / "3b"
-    output_file = str(output_dir / f"{task}_output.json")
+    # Use provided output file path or fallback to default
+    if output_file is None:
+        output_dir = CURRENT_DIR.parent / "output" / "3b"
+        output_file = str(output_dir / f"{task}_output.json")
     
     return {
         'status': 'success',
