@@ -178,6 +178,184 @@ def eval_mvbench(res):
     return None
 
 
+def evaluate_inference_results(inference_results: list, dataset_name: str) -> dict:
+    """
+    Evaluate inference results for different datasets
+    
+    Args:
+        inference_results: List of dictionaries containing prediction results
+                          Each dict should have 'prediction', 'answer', etc.
+        dataset_name: Name of the dataset ('activitynet', 'charades', 'qvhighlights', 
+                     'youcook2', 'breakfast', 'valor', 'mvbench')
+    
+    Returns:
+        Dictionary containing evaluation metrics
+    """
+    dataset_name = dataset_name.lower()
+    
+    if dataset_name == "mvbench":
+        return eval_mvbench_from_results(inference_results)
+    elif dataset_name in ["activitynet", "charades", "qvhighlights", "youcook2", "breakfast", "valor"]:
+        return eval_temporal_localization_from_results(inference_results, dataset_name)
+    else:
+        return {
+            "error": f"Unsupported dataset: {dataset_name}",
+            "supported_datasets": ["activitynet", "charades", "qvhighlights", "youcook2", "breakfast", "valor", "mvbench"]
+        }
+
+
+def eval_mvbench_from_results(inference_results: list) -> dict:
+    """
+    Evaluate MVBench results from inference output
+    
+    Args:
+        inference_results: List of inference results
+    
+    Returns:
+        Dictionary containing accuracy metric
+    """
+    def eq(pred, gt):
+        # find pred with (x)
+        if "(" in pred and ")" in pred:
+            pred_choice = pred.split("(")[1].strip()
+            if len(pred_choice) != 0:
+                pred_choice = pred_choice[0]
+            gt_choice = gt.split("(")[1][0]
+            if pred_choice == gt_choice or pred_choice in gt_choice or gt_choice in pred_choice:
+                return True
+        pred_splits = pred.split()
+        # filter the stop words
+        pred_splits = [ps for ps in pred_splits if ps not in ["the", "a", "an", "is", "are", "was", "were", "to", "of"]]
+        for ps in pred_splits:
+            if ps in gt or gt in ps:
+                return True
+        return False
+    
+    all_res = list()
+    total_samples = len(inference_results)
+    
+    for item in inference_results:
+        prediction = item.get("prediction", "")
+        answer = item.get("answer", "")
+        all_res.append(eq(prediction, answer))
+    
+    all_res = np.array(all_res)
+    acc = np.mean(all_res)
+    
+    return {
+        "dataset": "mvbench",
+        "total_samples": total_samples,
+        "accuracy": float(acc),
+        "correct_predictions": int(np.sum(all_res)),
+        "details": {
+            "metric_type": "accuracy",
+            "description": "Multiple choice accuracy for video understanding"
+        }
+    }
+
+
+def eval_temporal_localization_from_results(inference_results: list, dataset_name: str) -> dict:
+    """
+    Evaluate temporal localization results from inference output
+    
+    Args:
+        inference_results: List of inference results
+        dataset_name: Name of the dataset
+    
+    Returns:
+        Dictionary containing mIoU and Recall metrics
+    """
+    processed_data = []
+    invalid_predictions = 0
+    
+    for item in inference_results:
+        prediction_text = item.get("prediction", "")
+        answer = item.get("answer", [])
+        
+        # Extract prediction start time
+        prediction_start = get_predictions(prediction_text)
+        
+        if prediction_start == NONE_VALUE:
+            invalid_predictions += 1
+            continue
+        
+        # Handle different answer formats
+        if isinstance(answer, (int, float)):
+            # Single number case
+            ground_truth = [answer]
+        elif isinstance(answer, list) and len(answer) > 0:
+            if isinstance(answer[0], (int, float)):
+                # [start, end] format
+                ground_truth = [answer]
+            else:
+                # [[start, end], ...] format
+                ground_truth = answer
+        else:
+            invalid_predictions += 1
+            continue
+        
+        # For breakfast dataset, handle segments differently
+        if dataset_name == "breakfast" and "segments" in item:
+            segments = item["segments"]
+            prediction_splits = prediction_text.split(".")
+            
+            for i in range(min(len(segments), len(prediction_splits))):
+                seg_prediction_start = get_predictions(prediction_splits[i])
+                if seg_prediction_start == NONE_VALUE:
+                    continue
+                seg_answer = [segments[i]["start"] / 15, segments[i]["end"] / 15]
+                seg_prediction_end = seg_prediction_start + (seg_answer[1] - seg_answer[0])
+                
+                processed_data.append({
+                    "predictions": [[seg_prediction_start, seg_prediction_end]],
+                    "ground_truths": [seg_answer]
+                })
+            continue
+        
+        # For other datasets
+        if len(ground_truth) > 0 and len(ground_truth[0]) == 2:
+            # Calculate prediction end time based on ground truth duration
+            prediction_end = prediction_start + (ground_truth[0][1] - ground_truth[0][0])
+            
+            processed_data.append({
+                "predictions": [[prediction_start, prediction_end]],
+                "ground_truths": ground_truth
+            })
+    
+    if not processed_data:
+        return {
+            "dataset": dataset_name,
+            "error": "No valid predictions found",
+            "total_samples": len(inference_results),
+            "invalid_predictions": invalid_predictions
+        }
+    
+    # Calculate metrics for all valid samples
+    results_all = []
+    for item in processed_data:
+        results = evaluate_predictions(item["predictions"], item["ground_truths"])
+        results_all.append(results)
+    
+    # Calculate average metrics
+    mIoU = np.mean([item["mIoU"] for item in results_all])
+    recall_thresholds = results_all[0]["Recall"].keys() if results_all else [0.3, 0.5, 0.7]
+    recall = {k: np.mean([item["Recall"][k] for item in results_all]) for k in recall_thresholds}
+    
+    return {
+        "dataset": dataset_name,
+        "total_samples": len(inference_results),
+        "valid_samples": len(processed_data),
+        "invalid_predictions": invalid_predictions,
+        "mIoU": float(mIoU),
+        "Recall": {k: float(v) for k, v in recall.items()},
+        "details": {
+            "metric_type": "temporal_localization",
+            "description": "IoU-based temporal localization metrics",
+            "thresholds": list(recall_thresholds)
+        }
+    }
+
+
 def main():
     ds = load_data()
     for ds_name, ds_data in ds.items():

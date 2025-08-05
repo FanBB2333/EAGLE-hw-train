@@ -37,6 +37,7 @@ except ImportError:
     raise ImportError("omg")
 
 from fzy.ds import ActivityNetCaps, Breakfast, Charades, QVHighlights, VALOR32K, YouCook2, MVBench
+from fzy.video_metrics import evaluate_inference_results
 handle_stuck = False
 
 # Available tasks
@@ -870,24 +871,62 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     if 'success_rate' in results:
         summary['success_rate'] = results['success_rate']
     
-    # Process detailed task results
+    # Process detailed task results and calculate actual metrics
     task_summaries = {}
+    evaluation_metrics = {}
+    
     if 'detailed_results' in results:
         for task_name, task_data in results['detailed_results'].items():
-            if isinstance(task_data, dict):
+            if isinstance(task_data, dict) and task_data.get('status') == 'success':
                 task_summary = {}
                 if 'total_predictions' in task_data:
                     task_summary['total_predictions'] = task_data['total_predictions']
                 if 'output_file' in task_data:
                     task_summary['output_file'] = task_data['output_file']
+                    
+                    # Load the actual prediction results and calculate metrics
+                    try:
+                        with open(task_data['output_file'], 'r') as f:
+                            inference_results = json.load(f)
+                        
+                        # Use video_metrics to evaluate the results
+                        metrics = evaluate_inference_results(inference_results, task_name)
+                        evaluation_metrics[task_name] = metrics
+                        
+                        # Add metrics to task summary
+                        if 'error' not in metrics:
+                            if task_name == 'mvbench':
+                                task_summary['accuracy'] = metrics.get('accuracy', 0.0)
+                                task_summary['correct_predictions'] = metrics.get('correct_predictions', 0)
+                            else:
+                                task_summary['mIoU'] = metrics.get('mIoU', 0.0)
+                                task_summary['Recall'] = metrics.get('Recall', {})
+                                task_summary['valid_samples'] = metrics.get('valid_samples', 0)
+                                task_summary['invalid_predictions'] = metrics.get('invalid_predictions', 0)
+                        else:
+                            task_summary['evaluation_error'] = metrics['error']
+                            
+                    except Exception as e:
+                        print(f"Error evaluating {task_name}: {str(e)}")
+                        task_summary['evaluation_error'] = str(e)
+                        
                 if 'status' in task_data:
                     task_summary['status'] = task_data['status']
                 if 'task_specific_info' in task_data:
                     task_summary['description'] = task_data['task_specific_info'].get('description', 'N/A')
+                    
                 task_summaries[task_name] = task_summary
+            else:
+                # Handle failed tasks
+                task_summaries[task_name] = {
+                    'status': task_data.get('status', 'unknown'),
+                    'error': task_data.get('error', 'Unknown error')
+                }
     
     if task_summaries:
         summary['task_details'] = task_summaries
+    if evaluation_metrics:
+        summary['evaluation_metrics'] = evaluation_metrics
     
     # Print summary
     print(f"\n📊 Video Evaluation Summary:")
@@ -900,13 +939,29 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
     if 'success_rate' in summary:
         print(f"   Success rate: {summary['success_rate']:.2%}")
     
-    # Print task details
+    # Print task details with metrics
     if 'task_details' in summary:
-        print(f"\n📋 Task Details:")
+        print(f"\n📋 Task Details and Metrics:")
         for task_name, task_info in summary['task_details'].items():
             status_icon = "✓" if task_info.get('status') == 'success' else "✗"
             predictions = task_info.get('total_predictions', 'N/A')
-            print(f"   {status_icon} {task_name}: {predictions} predictions")
+            
+            if task_info.get('status') == 'success':
+                if task_name == 'mvbench':
+                    accuracy = task_info.get('accuracy', 0.0)
+                    correct = task_info.get('correct_predictions', 0)
+                    print(f"   {status_icon} {task_name}: {predictions} predictions, Accuracy: {accuracy:.4f} ({correct}/{predictions})")
+                else:
+                    miou = task_info.get('mIoU', 0.0)
+                    valid_samples = task_info.get('valid_samples', 0)
+                    invalid_samples = task_info.get('invalid_predictions', 0)
+                    recall = task_info.get('Recall', {})
+                    recall_str = ", ".join([f"R@{k}: {v:.4f}" for k, v in recall.items()]) if recall else "N/A"
+                    print(f"   {status_icon} {task_name}: {predictions} predictions, Valid: {valid_samples}, Invalid: {invalid_samples}")
+                    print(f"       mIoU: {miou:.4f}, {recall_str}")
+            else:
+                error = task_info.get('error', 'Unknown error')
+                print(f"   {status_icon} {task_name}: Failed - {error}")
     
     # Optionally save summary
     if args.output_path:
