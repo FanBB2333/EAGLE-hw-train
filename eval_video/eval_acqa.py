@@ -337,6 +337,62 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     }
 
 
+def calculate_acqa_accuracy(outputs):
+    """
+    Calculate accuracy for ActivityNetQA evaluation results.
+    
+    Args:
+        outputs: List of prediction outputs with 'question', 'answer', and 'prediction' fields
+        
+    Returns:
+        dict: Results containing accuracy metrics
+    """
+    from word2number import w2n
+    from num2words import num2words
+    
+    def equal(pred, gt):
+        if pred.lower() in gt.lower():
+            return True
+        if gt.lower() in pred.lower():
+            return True
+        # if gt is a number, convert to string and compare
+        try:
+            gt_str = num2words(gt, lang='en')
+            if gt_str.lower() in pred.lower() or pred.lower() in gt_str.lower():
+                return True
+        except Exception as e:
+            pass
+        extend_dict = {
+            "1": ["a", "one", "1st", "first"],
+            "2": [ "two", "2nd", "second"],
+            "0": ["zero", "0th", "zeroth"],
+        }
+        for k, v in extend_dict.items():
+            if k in gt.lower() and any(x in pred.lower() for x in v):
+                return True
+            if k in pred.lower() and any(x in gt.lower() for x in v):
+                return True
+        return False
+    
+    scores = []
+    for output in outputs:
+        question = output['question']
+        answer = output['answer']
+        prediction = output['prediction'][0] if output['prediction'] and len(output['prediction']) > 0 else ""
+        if equal(prediction, answer):
+            scores.append(1)
+        else:
+            scores.append(0)
+    
+    return {
+        'total_questions': len(outputs),
+        'correct_answers': sum(scores),
+        'accuracy': sum(scores) / len(scores) * 100 if len(scores) > 0 else 0,
+        'valid_predictions': len([o for o in outputs if o['prediction'] and len(o['prediction']) > 0]),
+        'scores': scores
+    }
+
+
 def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
     """Parse and summarize ActivityNetQA evaluation results"""
     # Extract model name from model_path for subfolder creation
@@ -357,50 +413,8 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
                     outputs = json.load(f)
                 print(f"Loading ActivityNetQA results from {output_file}")
                 
-                # Calculate evaluation metrics from loaded data
-                from word2number import w2n
-                from num2words import num2words
-                
-                def equal(pred, gt):
-                    if pred.lower() in gt.lower():
-                        return True
-                    if gt.lower() in pred.lower():
-                        return True
-                    # if gt is a number, convert to string and compare
-                    try:
-                        gt_str = num2words(gt, lang='en')
-                        if gt_str.lower() in pred.lower() or pred.lower() in gt_str.lower():
-                            return True
-                    except Exception as e:
-                        pass
-                    extend_dict = {
-                        "1": ["a", "one", "1st", "first"],
-                        "2": [ "two", "2nd", "second"],
-                        "0": ["zero", "0th", "zeroth"],
-                    }
-                    for k, v in extend_dict.items():
-                        if k in gt.lower() and any(x in pred.lower() for x in v):
-                            return True
-                        if k in pred.lower() and any(x in gt.lower() for x in v):
-                            return True
-                    return False
-                
-                scores = []
-                for output in outputs:
-                    question = output['question']
-                    answer = output['answer']
-                    prediction = output['prediction'][0] if output['prediction'] and len(output['prediction']) > 0 else ""
-                    if equal(prediction, answer):
-                        scores.append(1)
-                    else:
-                        scores.append(0)
-                
-                results = {
-                    'total_questions': len(outputs),
-                    'correct_answers': sum(scores),
-                    'accuracy': sum(scores) / len(scores) * 100 if len(scores) > 0 else 0,
-                    'valid_predictions': len([o for o in outputs if o['prediction'] and len(o['prediction']) > 0])
-                }
+                # Calculate evaluation metrics using shared function
+                results = calculate_acqa_accuracy(outputs)
             else:
                 print(f"ActivityNetQA prediction file not found: {output_file}")
                 return {}
@@ -440,34 +454,6 @@ def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace
 
 
 def eval_res(args: Union[argparse.Namespace, None] = None):
-    from word2number import w2n
-    from num2words import num2words
-    def equal(pred, gt):
-        if pred.lower() in gt.lower():
-            return True
-        if gt.lower() in pred.lower():
-            return True
-        # if gt is a number, convert to string and compare
-        try:
-            # gt_num = w2n.word_to_num(gt.lower())
-            gt_str = num2words(gt, lang='en')
-            if gt_str.lower() in pred.lower() or pred.lower() in gt_str.lower():
-                return True
-        except Exception as e:
-            pass
-        extend_dict = {
-            "1": ["a", "one", "1st", "first"],
-            "2": [ "two", "2nd", "second"],
-            "0": ["zero", "0th", "zeroth"],
-        }
-        for k, v in extend_dict.items():
-            if k in gt.lower() and any(x in pred.lower() for x in v):
-                return True
-            if k in pred.lower() and any(x in gt.lower() for x in v):
-                return True
-        return False
-                
-        
     output_file = args.output_path
     if not os.path.exists(output_file):
         print(f"Output file {output_file} does not exist, please check")
@@ -475,18 +461,12 @@ def eval_res(args: Union[argparse.Namespace, None] = None):
     with open(output_file, 'r') as f:
         outputs = json.load(f)
     print(f"Loaded {len(outputs)} outputs from {output_file}")
-    scores = list()
-    for output in outputs:
-        question = output['question']
-        answer = output['answer']
-        prediction = output['prediction'][0]
-        if equal(prediction, answer):
-            scores.append(1)
-        else:
-            scores.append(0)
-    print(f"Accuracy: {sum(scores) / len(scores) * 100:.2f}%")
-    print(f"Total: {len(scores)}, Correct: {sum(scores)}")
     
+    # Use shared evaluation function
+    results = calculate_acqa_accuracy(outputs)
+    print(f"Accuracy: {results['accuracy']:.2f}%")
+    print(f"Total: {results['total_questions']}, Correct: {results['correct_answers']}")
+    return results
 
 def evaluate_with_results(model_path, datasets=None, output_path=None):
     """
