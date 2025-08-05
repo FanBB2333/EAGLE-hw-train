@@ -68,7 +68,7 @@ def parse_args():
     )
     parser.add_argument(
         "--gpus", 
-        default="0",
+        default="3",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
     )
     parser.add_argument(
