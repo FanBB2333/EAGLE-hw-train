@@ -236,8 +236,8 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
         else:
             video_grid_thw = None
             print("No video_grid_thw found, using None for video_grid_thw")
-        question = data.question
-        answer = data.answer
+        question = data['question']
+        answer = data['answer']
 
         if DEFAULT_IMAGE_TOKEN not in question:
             question = DEFAULT_IMAGE_TOKEN + '\n' + question
@@ -331,6 +331,56 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     }
 
 
+
+def eval_res(args: Union[argparse.Namespace, None] = None):
+    from word2number import w2n
+    from num2words import num2words
+    def equal(pred, gt):
+        if pred.lower() in gt.lower():
+            return True
+        if gt.lower() in pred.lower():
+            return True
+        # if gt is a number, convert to string and compare
+        try:
+            # gt_num = w2n.word_to_num(gt.lower())
+            gt_str = num2words(gt, lang='en')
+            if gt_str.lower() in pred.lower() or pred.lower() in gt_str.lower():
+                return True
+        except Exception as e:
+            pass
+        extend_dict = {
+            "1": ["a", "one", "1st", "first"],
+            "2": [ "two", "2nd", "second"],
+            "0": ["zero", "0th", "zeroth"],
+        }
+        for k, v in extend_dict.items():
+            if k in gt.lower() and any(x in pred.lower() for x in v):
+                return True
+            if k in pred.lower() and any(x in gt.lower() for x in v):
+                return True
+        return False
+                
+        
+    output_file = args.output_path
+    if not os.path.exists(output_file):
+        print(f"Output file {output_file} does not exist, please check")
+        return
+    with open(output_file, 'r') as f:
+        outputs = json.load(f)
+    print(f"Loaded {len(outputs)} outputs from {output_file}")
+    scores = list()
+    for output in outputs:
+        question = output['question']
+        answer = output['answer']
+        prediction = output['prediction'][0]
+        if equal(prediction, answer):
+            scores.append(1)
+        else:
+            scores.append(0)
+    print(f"Accuracy: {sum(scores) / len(scores) * 100:.2f}%")
+    print(f"Total: {len(scores)}, Correct: {sum(scores)}")
+    
+
 def evaluate_with_results(model_path, datasets=None):
     """
     Wrapper function for compatibility with eval_video_all.py
@@ -361,3 +411,4 @@ def pad_sequence(tokenizer, input_ids, batch_first, padding_value) -> torch.Tens
 if __name__ == "__main__":
     args = parse_eval_args()
     evaluate(args=args)
+    # eval_res(args=args)
