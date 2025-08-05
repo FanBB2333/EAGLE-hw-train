@@ -60,7 +60,7 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", 
-        default="acqa",
+        default="all",
         help="Datasets to evaluate. Options: 'all', 'acqa', or comma-separated list. "
              "Available datasets: acqa (ActivityNetQA), activitynet, charades, "
              "qvhighlights, youcook2, mvbench"

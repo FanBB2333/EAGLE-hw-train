@@ -317,6 +317,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     else:
         output_file = "acqa.json"
     
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(outputs, f, ensure_ascii=False, indent=4)
     # with open(args.output_path, 'w') as output_file:
