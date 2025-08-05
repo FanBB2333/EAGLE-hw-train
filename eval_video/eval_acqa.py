@@ -17,6 +17,7 @@ from PIL import Image
 from train_video1 import ModelArguments
 
 eval_logger = logging.getLogger("eval_3dllm")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # try:
 from eagle.model.builder import load_pretrained_model
@@ -311,7 +312,7 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     
     # Create output directory if it doesn't exist
     if args.output_path:
-        os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+        os.makedirs(args.output_path, exist_ok=True)
         output_file = os.path.join(args.output_path, "acqa.json")
     else:
         output_file = "acqa.json"
@@ -386,9 +387,14 @@ def eval_res(args: Union[argparse.Namespace, None] = None):
     print(f"Total: {len(scores)}, Correct: {sum(scores)}")
     
 
-def evaluate_with_results(model_path, datasets=None):
+def evaluate_with_results(model_path, datasets=None, output_path=None):
     """
     Wrapper function for compatibility with eval_video_all.py
+    
+    Args:
+        model_path: Path to the pretrained model
+        datasets: List of dataset names to evaluate (not used for ACQA)
+        output_path: Optional custom output directory. If None, uses unified structure.
     """
     import argparse
     
@@ -397,9 +403,16 @@ def evaluate_with_results(model_path, datasets=None):
     args.model_path = model_path
     args.model_name = "eagle"
     args.device = "cuda"
-    args.output_path = '/home6/fzy/repos/EAGLE/eval_video/res_folder/videos'
     args.conv_template = "llama3"
     args.use_cache = None
+    
+    # Calculate unified output directory if no custom path provided
+    if output_path is None:
+        model_name = os.path.basename(model_path.rstrip('/'))
+        base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
+        args.output_path = str(base_output_dir)
+    else:
+        args.output_path = output_path
     
     # Call the main evaluate function
     return evaluate(args)
