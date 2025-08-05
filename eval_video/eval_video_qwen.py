@@ -837,6 +837,91 @@ def evaluate_with_results(model_path: str, datasets=None, output_path=None):
             'model_path': model_path
         }
 
+def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Parse and summarize video evaluation results from eval_video_qwen"""
+    # Extract model name from model_path for subfolder creation  
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
+    if evaluation_results is not None:
+        # Use the passed evaluation results
+        results = evaluation_results
+        print("Parsing video evaluation results from evaluation results...")
+    else:
+        # Load from files if no evaluation results passed
+        print("Warning: No evaluation results passed, this may indicate an incomplete evaluation flow")
+        return {}
+    
+    # Extract summary information
+    summary = {}
+    
+    # Process overall status and task completion
+    if 'status' in results:
+        summary['status'] = results['status']
+    if 'total_tasks' in results:
+        summary['total_tasks'] = results['total_tasks']
+    if 'successful_tasks' in results:
+        summary['successful_tasks'] = results['successful_tasks']
+        summary['successful_task_count'] = len(results['successful_tasks'])
+    if 'failed_tasks' in results:
+        summary['failed_tasks'] = results['failed_tasks']
+        summary['failed_task_count'] = len(results['failed_tasks'])
+    if 'success_rate' in results:
+        summary['success_rate'] = results['success_rate']
+    
+    # Process detailed task results
+    task_summaries = {}
+    if 'detailed_results' in results:
+        for task_name, task_data in results['detailed_results'].items():
+            if isinstance(task_data, dict):
+                task_summary = {}
+                if 'total_predictions' in task_data:
+                    task_summary['total_predictions'] = task_data['total_predictions']
+                if 'output_file' in task_data:
+                    task_summary['output_file'] = task_data['output_file']
+                if 'status' in task_data:
+                    task_summary['status'] = task_data['status']
+                if 'task_specific_info' in task_data:
+                    task_summary['description'] = task_data['task_specific_info'].get('description', 'N/A')
+                task_summaries[task_name] = task_summary
+    
+    if task_summaries:
+        summary['task_details'] = task_summaries
+    
+    # Print summary
+    print(f"\n📊 Video Evaluation Summary:")
+    if 'total_tasks' in summary:
+        print(f"   Total tasks: {summary['total_tasks']}")
+    if 'successful_task_count' in summary:
+        print(f"   Successful tasks: {summary['successful_task_count']}")
+    if 'failed_task_count' in summary:
+        print(f"   Failed tasks: {summary['failed_task_count']}")
+    if 'success_rate' in summary:
+        print(f"   Success rate: {summary['success_rate']:.2%}")
+    
+    # Print task details
+    if 'task_details' in summary:
+        print(f"\n📋 Task Details:")
+        for task_name, task_info in summary['task_details'].items():
+            status_icon = "✓" if task_info.get('status') == 'success' else "✗"
+            predictions = task_info.get('total_predictions', 'N/A')
+            print(f"   {status_icon} {task_name}: {predictions} predictions")
+    
+    # Optionally save summary
+    if args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        summary_file = os.path.join(args.output_path, "video_evaluation_summary.json")
+        with open(summary_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "video_summary": summary,
+                "detailed_results": results
+            }, f, ensure_ascii=False, indent=4)
+        print(f"Video evaluation summary saved to {summary_file}")
+    
+    return summary
+
+
 def process_task_results(task: str, task_results, output_file: str = None):
     """
     Process raw task results and extract relevant metrics

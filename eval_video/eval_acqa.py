@@ -337,6 +337,107 @@ def evaluate(args: Union[argparse.Namespace, None] = None) -> None:
     }
 
 
+def parse_output(evaluation_results: dict = None, args: Union[argparse.Namespace, None] = None) -> dict:
+    """Parse and summarize ActivityNetQA evaluation results"""
+    # Extract model name from model_path for subfolder creation
+    model_folder_name = os.path.basename(args.model_path.rstrip('/'))
+    if args.output_path:
+        args.output_path = os.path.join(args.output_path, model_folder_name)
+    
+    if evaluation_results is not None:
+        # Use the passed evaluation results
+        results = evaluation_results
+        print("Parsing ActivityNetQA results from evaluation results...")
+    else:
+        # Load from file if no evaluation results passed
+        if args.output_path:
+            output_file = os.path.join(args.output_path, "acqa.json")
+            if os.path.exists(output_file):
+                with open(output_file, "r", encoding="utf-8") as f:
+                    outputs = json.load(f)
+                print(f"Loading ActivityNetQA results from {output_file}")
+                
+                # Calculate evaluation metrics from loaded data
+                from word2number import w2n
+                from num2words import num2words
+                
+                def equal(pred, gt):
+                    if pred.lower() in gt.lower():
+                        return True
+                    if gt.lower() in pred.lower():
+                        return True
+                    # if gt is a number, convert to string and compare
+                    try:
+                        gt_str = num2words(gt, lang='en')
+                        if gt_str.lower() in pred.lower() or pred.lower() in gt_str.lower():
+                            return True
+                    except Exception as e:
+                        pass
+                    extend_dict = {
+                        "1": ["a", "one", "1st", "first"],
+                        "2": [ "two", "2nd", "second"],
+                        "0": ["zero", "0th", "zeroth"],
+                    }
+                    for k, v in extend_dict.items():
+                        if k in gt.lower() and any(x in pred.lower() for x in v):
+                            return True
+                        if k in pred.lower() and any(x in gt.lower() for x in v):
+                            return True
+                    return False
+                
+                scores = []
+                for output in outputs:
+                    question = output['question']
+                    answer = output['answer']
+                    prediction = output['prediction'][0] if output['prediction'] and len(output['prediction']) > 0 else ""
+                    if equal(prediction, answer):
+                        scores.append(1)
+                    else:
+                        scores.append(0)
+                
+                results = {
+                    'total_questions': len(outputs),
+                    'correct_answers': sum(scores),
+                    'accuracy': sum(scores) / len(scores) * 100 if len(scores) > 0 else 0,
+                    'valid_predictions': len([o for o in outputs if o['prediction'] and len(o['prediction']) > 0])
+                }
+            else:
+                print(f"ActivityNetQA prediction file not found: {output_file}")
+                return {}
+        else:
+            print("No evaluation results or output path provided")
+            return {}
+    
+    # Extract summary information
+    summary = {}
+    if 'accuracy' in results:
+        summary['accuracy'] = results['accuracy']
+    if 'total_questions' in results:
+        summary['total_questions'] = results['total_questions']
+    if 'correct_answers' in results:
+        summary['correct_answers'] = results['correct_answers']
+    if 'valid_predictions' in results:
+        summary['valid_predictions'] = results['valid_predictions']
+    
+    # Print summary
+    if 'accuracy' in summary:
+        print(f"ActivityNetQA Accuracy: {summary['accuracy']:.2f}%")
+        if 'total_questions' in summary and 'correct_answers' in summary:
+            print(f"  - Correct: {summary['correct_answers']}/{summary['total_questions']}")
+    
+    # Optionally save summary
+    if args.output_path:
+        os.makedirs(args.output_path, exist_ok=True)
+        summary_file = os.path.join(args.output_path, "acqa_evaluation_summary.json")
+        with open(summary_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "acqa_summary": summary,
+                "detailed_results": results
+            }, f, ensure_ascii=False, indent=4)
+        print(f"ActivityNetQA summary saved to {summary_file}")
+    
+    return summary
+
 
 def eval_res(args: Union[argparse.Namespace, None] = None):
     from word2number import w2n
