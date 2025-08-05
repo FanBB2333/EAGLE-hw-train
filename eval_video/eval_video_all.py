@@ -19,10 +19,8 @@ Usage Examples:
 Supported Datasets:
     - acqa: ActivityNetQA (from eval_acqa.py)
     - activitynet: ActivityNet Captions (from eval_video_qwen.py)
-    - breakfast: Breakfast Actions (from eval_video_qwen.py)
     - charades: Charades Actions (from eval_video_qwen.py)
     - qvhighlights: QV Highlights (from eval_video_qwen.py)
-    - valor: VALOR32K (from eval_video_qwen.py)
     - youcook2: YouCook2 (from eval_video_qwen.py)
     - mvbench: MVBench (from eval_video_qwen.py)
 
@@ -63,8 +61,8 @@ def parse_args():
         "--datasets", 
         default="acqa",
         help="Datasets to evaluate. Options: 'all', 'acqa', or comma-separated list. "
-             "Available datasets: acqa (ActivityNetQA), activitynet, breakfast, charades, "
-             "qvhighlights, valor, youcook2, mvbench"
+             "Available datasets: acqa (ActivityNetQA), activitynet, charades, "
+             "qvhighlights, youcook2, mvbench"
     )
     parser.add_argument(
         "--gpus", 
@@ -279,10 +277,8 @@ def run_all(args):
         "acqa": "eval_acqa.py",
         # eval_video_qwen datasets
         "activitynet": "eval_video_qwen.py",
-        "breakfast": "eval_video_qwen.py", 
         "charades": "eval_video_qwen.py",
         "qvhighlights": "eval_video_qwen.py",
-        "valor": "eval_video_qwen.py",
         "youcook2": "eval_video_qwen.py",
         "mvbench": "eval_video_qwen.py",
     }
@@ -294,7 +290,7 @@ def run_all(args):
         # Add all available scripts with their respective datasets
         eval_tasks = [
             ("eval_acqa.py", ["acqa"]),
-            ("eval_video_qwen.py", ["activitynet", "breakfast", "charades", "qvhighlights", "valor", "youcook2", "mvbench"]),
+            ("eval_video_qwen.py", ["activitynet", "charades", "qvhighlights", "youcook2", "mvbench"]),
         ]
     else:
         # Parse comma-separated dataset names
