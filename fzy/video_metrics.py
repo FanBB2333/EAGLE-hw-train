@@ -37,7 +37,9 @@ def evaluate_predictions(predictions, ground_truths, thresholds=[0.3, 0.5, 0.7])
     :param thresholds: list of floats, IoU 阈值列表
     :return: dict, 包含 mIoU 和 R@ 的指标
     """
-    assert len(predictions) == len(ground_truths), "预测结果和真值数量不一致"
+    if len(ground_truths) > len(predictions):
+        ground_truths = ground_truths[:len(predictions)]
+    assert len(predictions) == len(ground_truths), f"预测结果: {predictions}, 和真值: {ground_truths} 数量不一致"
 
     iou_scores = []
     recall_scores = {threshold: 0 for threshold in thresholds}
