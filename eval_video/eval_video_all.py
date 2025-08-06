@@ -2,6 +2,10 @@
 Comprehensive Video Evaluation Script
 
 This script runs multiple video evaluation tasks and saves results to organized files.
+It performs both inference and evaluation scoring in a two-stage process:
+
+1. **Inference Stage**: Runs model inference to generate predictions
+2. **Evaluation Stage**: Calls parse_output functions to calculate metrics and scores
 
 Usage Examples:
     # Run ActivityNetQA evaluation only
@@ -15,6 +19,12 @@ Usage Examples:
     
     # Use custom model and output directory
     python eval_video_all.py --datasets charades --model_path /path/to/model --output_dir ./my_results
+    
+    # Only evaluate existing prediction files (no inference)
+    python eval_video_all.py --datasets acqa --eval_only
+    
+    # Evaluate specific datasets from existing files
+    python eval_video_all.py --datasets mvbench,charades --eval_only --model_path /path/to/model
 
 Supported Datasets:
     - acqa: ActivityNetQA (from eval_acqa.py)
@@ -24,12 +34,21 @@ Supported Datasets:
     - youcook2: YouCook2 (from eval_video_qwen.py)
     - mvbench: MVBench (from eval_video_qwen.py)
 
+Evaluation Process:
+    1. For each dataset, the script first runs inference using evaluate_with_results()
+    2. Then it calls parse_output() to calculate evaluation metrics (accuracy, mIoU, Recall@K, etc.)
+    3. Results include both raw inference outputs and calculated metrics
+    4. All results are saved with detailed metadata and summary statistics
+
 Features:
+    - Two-stage evaluation: inference + scoring
+    - Evaluation-only mode: parse existing prediction files without inference (--eval_only)
     - Automatic result saving with timestamps and metadata in model-specific directories
     - Dataset-specific output directories: eval_video/res_folder/videos/{model_name}/{dataset}/
     - Support for sequential and parallel execution
     - Detailed result formatting and summary statistics
     - Integration with multiple evaluation scripts
+    - Comprehensive metrics calculation (accuracy, mIoU, Recall@K)
     - Extensible framework for adding new video evaluation datasets
 """
 
@@ -75,6 +94,13 @@ def parse_args():
         default=None,
         help="Custom output directory for saving results. If not specified, uses default location."
     )
+    parser.add_argument(
+        "--eval_only",
+        action="store_true",
+        default=False,
+        help="Only evaluate existing JSON results without running inference. "
+             "Searches for prediction files in the output directory and calculates metrics."
+    )
     return parser.parse_args()
 
 # Parse arguments and set GPU environment early
@@ -86,14 +112,122 @@ if not os.path.isabs(args.model_path):
 
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
+def run_evaluation_only(script_name, model_path, datasets=None, output_path=None):
+    """Run evaluation only on existing prediction files"""
+    try:
+        # Import parse_output functions dynamically when needed
+        if script_name == "eval_acqa.py":
+            from eval_acqa import parse_output
+        elif script_name == "eval_video_qwen.py":
+            from eval_video_qwen import parse_output
+        else:
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': f'Unknown script: {script_name}'
+            }
+        
+        print(f"Starting evaluation-only for {script_name}...")
+        
+        # Calculate output path
+        model_name = os.path.basename(model_path.rstrip('/'))
+        if output_path:
+            base_output_dir = Path(output_path) / model_name
+        else:
+            base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
+        
+        # Create args object for parse_output
+        import argparse
+        args = argparse.Namespace()
+        args.model_path = model_path
+        args.output_path = str(base_output_dir)
+        
+        # Check if output directory exists
+        if not base_output_dir.exists():
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': f'Output directory does not exist: {base_output_dir}'
+            }
+        
+        # Look for prediction files
+        prediction_files = []
+        if script_name == "eval_acqa.py":
+            acqa_file = base_output_dir / "acqa.json"
+            if acqa_file.exists():
+                prediction_files.append(str(acqa_file))
+        elif script_name == "eval_video_qwen.py":
+            # Look for video prediction files
+            for dataset in datasets or ['activitynet', 'charades', 'qvhighlights', 'youcook2', 'mvbench']:
+                pred_file = base_output_dir / f"{dataset}.json"
+                if pred_file.exists():
+                    prediction_files.append(str(pred_file))
+        
+        if not prediction_files:
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': f'No prediction files found in {base_output_dir}. Expected files: {[f"{d}.json" for d in (datasets or ["acqa"])]}'
+            }
+        
+        print(f"Found prediction files: {prediction_files}")
+        
+        try:
+            # Call parse_output to get evaluation metrics
+            # For eval_only mode, we pass None as evaluation_results to force loading from files
+            evaluation_metrics = parse_output(evaluation_results=None, args=args)
+            print(f"✓ {script_name} evaluation completed successfully")
+            
+            # Create a mock inference results structure for compatibility
+            mock_inference_results = {
+                'status': 'loaded_from_files',
+                'prediction_files': prediction_files,
+                'output_path': str(base_output_dir),
+                'eval_only_mode': True
+            }
+            
+            # Combine with evaluation metrics
+            combined_results = {
+                'inference_results': mock_inference_results,
+                'evaluation_metrics': evaluation_metrics,
+                'status': 'completed',
+                'eval_only_mode': True
+            }
+            
+            return {
+                'script': script_name,
+                'status': 'success',
+                'results': combined_results
+            }
+            
+        except Exception as e:
+            print(f"✗ {script_name} evaluation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'script': script_name,
+                'status': 'error',
+                'error': f'Evaluation failed: {str(e)}'
+            }
+        
+    except Exception as e:
+        print(f"✗ Failed to run evaluation-only for {script_name}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'script': script_name,
+            'status': 'error',
+            'error': str(e)
+        }
+
 def run_evaluation_internal(script_name, model_path, datasets=None):
     """Run evaluation internally and return results"""
     try:
         # Import evaluation functions dynamically when needed
         if script_name == "eval_acqa.py":
-            from eval_acqa import evaluate_with_results
+            from eval_acqa import evaluate_with_results, parse_output
         elif script_name == "eval_video_qwen.py":
-            from eval_video_qwen import evaluate_with_results
+            from eval_video_qwen import evaluate_with_results, parse_output
         else:
             return {
                 'script': script_name,
@@ -109,41 +243,47 @@ def run_evaluation_internal(script_name, model_path, datasets=None):
         base_output_dir = PROJECT_ROOT / "eval_video" / "res_folder" / "videos" / model_name
         
         # Call the evaluation function with output_path
-        results = evaluate_with_results(model_path, datasets, str(base_output_dir))
+        inference_results = evaluate_with_results(model_path, datasets, str(base_output_dir))
         
-        print(f"✓ {script_name} completed successfully")
+        print(f"✓ {script_name} inference completed successfully")
         
-        # Handle different return formats
-        if isinstance(results, dict):
-            if 'status' in results and results['status'] == 'completed':
-                # New format with status field
-                return {
-                    'script': script_name,
-                    'status': 'success',
-                    'results': results
-                }
-            elif 'error' in results:
-                # Error case
-                return {
-                    'script': script_name,
-                    'status': 'error',
-                    'error': results['error']
-                }
-            else:
-                # Legacy format or direct results
-                return {
-                    'script': script_name,
-                    'status': 'success',
-                    'results': results
-                }
-        else:
-            # Unexpected format
+        # Now call parse_output to evaluate the inference results
+        print(f"Starting evaluation/scoring for {script_name}...")
+        
+        # Create args object for parse_output
+        import argparse
+        args = argparse.Namespace()
+        args.model_path = model_path
+        args.output_path = str(base_output_dir)
+        
+        try:
+            # Call parse_output to get evaluation metrics
+            evaluation_metrics = parse_output(evaluation_results=inference_results, args=args)
+            print(f"✓ {script_name} evaluation/scoring completed successfully")
+            
+            # Combine inference results with evaluation metrics
+            combined_results = {
+                'inference_results': inference_results,
+                'evaluation_metrics': evaluation_metrics,
+                'status': 'completed'
+            }
+            
             return {
                 'script': script_name,
                 'status': 'success',
-                'results': {'raw_output': results}
+                'results': combined_results
             }
             
+        except Exception as e:
+            print(f"⚠ {script_name} inference completed but evaluation failed: {str(e)}")
+            # Return inference results even if evaluation fails
+            return {
+                'script': script_name,
+                'status': 'partial_success',
+                'results': inference_results,
+                'evaluation_error': str(e)
+            }
+        
     except Exception as e:
         print(f"✗ Failed to run {script_name}: {str(e)}")
         import traceback
@@ -186,20 +326,69 @@ def save_results_to_file(results, args):
         "datasets_evaluated": args.datasets,
         "output_directory": str(dataset_output_dir),
         "sequential_mode": args.sequential,
+        "eval_only_mode": args.eval_only,
         "gpu_devices": args.gpus,
         "total_evaluations": len(results),
         "successful_evaluations": len([r for r in results if r['status'] == 'success']),
-        "failed_evaluations": len([r for r in results if r['status'] == 'error'])
+        "partial_success_evaluations": len([r for r in results if r['status'] == 'partial_success']),
+        "failed_evaluations": len([r for r in results if r['status'] == 'error']),
+        "evaluation_process": "evaluation_only" if args.eval_only else "two_stage_inference_and_scoring",
+        "evaluation_description": "Parse existing prediction files for metrics" if args.eval_only else "Runs inference then calls parse_output for metric calculation"
     }
     
     # Prepare summary statistics
     summary_stats = {}
     for result in results:
-        if result['status'] == 'success' and 'results' in result:
+        if result['status'] in ['success', 'partial_success'] and 'results' in result:
             script_name = result['script'].replace('.py', '')
             
-            if script_name == 'eval_acqa' and isinstance(result['results'], dict):
-                # Extract ActivityNetQA specific stats
+            # Handle new combined format with evaluation metrics
+            if isinstance(result['results'], dict) and 'evaluation_metrics' in result['results']:
+                evaluation_metrics = result['results']['evaluation_metrics']
+                inference_results = result['results']['inference_results']
+                
+                if script_name == 'eval_acqa':
+                    # Extract ActivityNetQA evaluation metrics
+                    summary_stats[script_name] = {
+                        "accuracy": evaluation_metrics.get('accuracy'),
+                        "total_questions": evaluation_metrics.get('total_questions'),
+                        "correct_answers": evaluation_metrics.get('correct_answers'),
+                        "valid_predictions": evaluation_metrics.get('valid_predictions'),
+                        "output_file": inference_results.get('output_file')
+                    }
+                elif script_name == 'eval_video_qwen':
+                    # Extract video evaluation metrics
+                    summary_stats[script_name] = {
+                        "total_tasks": evaluation_metrics.get('total_tasks', 0),
+                        "successful_task_count": evaluation_metrics.get('successful_task_count', 0),
+                        "failed_task_count": evaluation_metrics.get('failed_task_count', 0),
+                        "success_rate": evaluation_metrics.get('success_rate', 0.0)
+                    }
+                    
+                    # Add individual task metrics
+                    if 'task_details' in evaluation_metrics:
+                        for task_name, task_info in evaluation_metrics['task_details'].items():
+                            if task_info.get('status') == 'success':
+                                task_stats = {}
+                                if task_name == 'mvbench':
+                                    task_stats = {
+                                        "accuracy": task_info.get('accuracy', 0.0),
+                                        "correct_predictions": task_info.get('correct_predictions', 0),
+                                        "total_predictions": task_info.get('total_predictions', 0)
+                                    }
+                                else:
+                                    task_stats = {
+                                        "mIoU": task_info.get('mIoU', 0.0),
+                                        "Recall": task_info.get('Recall', {}),
+                                        "valid_samples": task_info.get('valid_samples', 0),
+                                        "invalid_predictions": task_info.get('invalid_predictions', 0),
+                                        "total_predictions": task_info.get('total_predictions', 0)
+                                    }
+                                summary_stats[f"{script_name}_{task_name}"] = task_stats
+                            
+            # Handle legacy formats for backward compatibility
+            elif script_name == 'eval_acqa' and isinstance(result['results'], dict):
+                # Extract ActivityNetQA specific stats (legacy format)
                 acqa_data = result['results']
                 summary_stats[script_name] = {
                     "total_questions": acqa_data.get('total_questions'),
@@ -207,7 +396,7 @@ def save_results_to_file(results, args):
                     "output_file": acqa_data.get('output_file')
                 }
             elif script_name == 'eval_video_qwen' and isinstance(result['results'], dict):
-                # Extract eval_video_qwen specific stats
+                # Extract eval_video_qwen specific stats (legacy format)
                 qwen_data = result['results']
                 summary_stats[script_name] = {
                     "total_tasks": qwen_data.get('total_tasks', 0),
@@ -254,9 +443,11 @@ def save_results_to_file(results, args):
         print(f"   - Output directory: {dataset_output_dir}")
         print(f"   - Total evaluations: {metadata['total_evaluations']}")
         print(f"   - Successful: {metadata['successful_evaluations']}")
+        print(f"   - Partial success: {metadata['partial_success_evaluations']}")
         print(f"   - Failed: {metadata['failed_evaluations']}")
         print(f"   - Model: {metadata['model_name']}")
         print(f"   - Datasets: {metadata['datasets_evaluated']}")
+        print(f"   - Process: {metadata['evaluation_process']}")
         
         # Print key metrics
         if summary_stats:
@@ -264,8 +455,16 @@ def save_results_to_file(results, args):
             for eval_name, stats in summary_stats.items():
                 print(f"   {eval_name}:")
                 for metric, value in stats.items():
-                    if isinstance(value, float) and 'accuracy' in metric.lower():
-                        print(f"     - {metric}: {value:.4f}")
+                    if isinstance(value, float):
+                        if 'accuracy' in metric.lower() or 'miou' in metric.lower():
+                            print(f"     - {metric}: {value:.4f}")
+                        elif 'rate' in metric.lower():
+                            print(f"     - {metric}: {value:.2%}")
+                        else:
+                            print(f"     - {metric}: {value:.4f}")
+                    elif isinstance(value, dict) and metric == 'Recall':
+                        recall_str = ", ".join([f"R@{k}: {v:.4f}" for k, v in value.items()])
+                        print(f"     - {metric}: {recall_str}")
                     else:
                         print(f"     - {metric}: {value}")
         
@@ -324,21 +523,37 @@ def run_all(args):
     print(f"Model path: {args.model_path}")
     print(f"Datasets: {args.datasets}")
     print(f"Sequential mode: {args.sequential}")
+    print(f"Eval only mode: {args.eval_only}")
     print(f"CUDA_VISIBLE_DEVICES: {args.gpus}")
     print("-" * 50)
     
     results = []
     
-    # Run evaluations internally and collect results
-    if args.sequential:
-        for script, datasets in eval_tasks:
-            result = run_evaluation_internal(script, args.model_path, datasets)
-            results.append(result)
+    # Choose evaluation mode based on --eval_only flag
+    if args.eval_only:
+        print("🔍 Running in evaluation-only mode (parsing existing prediction files)...")
+        # Run evaluation-only mode
+        if args.sequential:
+            for script, datasets in eval_tasks:
+                result = run_evaluation_only(script, args.model_path, datasets, args.output_dir)
+                results.append(result)
+        else:
+            # Run evaluations in parallel using multiprocessing
+            with multiprocessing.Pool() as pool:
+                tasks = [(script, args.model_path, datasets, args.output_dir) for script, datasets in eval_tasks]
+                results = pool.starmap(run_evaluation_only, tasks)
     else:
-        # Run evaluations in parallel using multiprocessing
-        with multiprocessing.Pool() as pool:
-            tasks = [(script, args.model_path, datasets) for script, datasets in eval_tasks]
-            results = pool.starmap(run_evaluation_internal, tasks)
+        print("🚀 Running full evaluation mode (inference + scoring)...")
+        # Run evaluations internally and collect results
+        if args.sequential:
+            for script, datasets in eval_tasks:
+                result = run_evaluation_internal(script, args.model_path, datasets)
+                results.append(result)
+        else:
+            # Run evaluations in parallel using multiprocessing
+            with multiprocessing.Pool() as pool:
+                tasks = [(script, args.model_path, datasets) for script, datasets in eval_tasks]
+                results = pool.starmap(run_evaluation_internal, tasks)
     
     # Print summary of results
     print("-" * 50)
@@ -348,8 +563,59 @@ def run_all(args):
         print(f"Status: {result['status']}")
         
         if result['status'] == 'success' and 'results' in result:
-            # Handle different result formats
-            if result['script'] == 'eval_acqa.py' and isinstance(result['results'], dict):
+            # Check if this is eval_only mode
+            is_eval_only = result['results'].get('eval_only_mode', False)
+            if is_eval_only:
+                print(f"🔍 Evaluation-only mode (parsed existing files)")
+            
+            # Handle new combined results format with inference + evaluation
+            if isinstance(result['results'], dict) and 'evaluation_metrics' in result['results']:
+                print(f"📊 Evaluation Metrics:")
+                evaluation_metrics = result['results']['evaluation_metrics']
+                
+                if result['script'] == 'eval_acqa.py':
+                    # ActivityNetQA specific metrics
+                    if 'accuracy' in evaluation_metrics:
+                        print(f"  ActivityNetQA Accuracy: {evaluation_metrics['accuracy']:.4f}%")
+                    if 'total_questions' in evaluation_metrics:
+                        print(f"  Total Questions: {evaluation_metrics['total_questions']}")
+                    if 'correct_answers' in evaluation_metrics:
+                        print(f"  Correct Answers: {evaluation_metrics['correct_answers']}")
+                    if 'valid_predictions' in evaluation_metrics:
+                        print(f"  Valid Predictions: {evaluation_metrics['valid_predictions']}")
+                        
+                elif result['script'] == 'eval_video_qwen.py':
+                    # Video evaluation specific metrics
+                    if 'task_details' in evaluation_metrics:
+                        print(f"  Video Task Results:")
+                        for task_name, task_info in evaluation_metrics['task_details'].items():
+                            status_icon = "✓" if task_info.get('status') == 'success' else "✗"
+                            predictions = task_info.get('total_predictions', 'N/A')
+                            
+                            if task_info.get('status') == 'success':
+                                if task_name == 'mvbench':
+                                    accuracy = task_info.get('accuracy', 0.0)
+                                    correct = task_info.get('correct_predictions', 0)
+                                    print(f"    {status_icon} {task_name}: Accuracy {accuracy:.4f} ({correct}/{predictions})")
+                                else:
+                                    miou = task_info.get('mIoU', 0.0)
+                                    valid_samples = task_info.get('valid_samples', 0)
+                                    invalid_samples = task_info.get('invalid_predictions', 0)
+                                    recall = task_info.get('Recall', {})
+                                    recall_str = ", ".join([f"R@{k}: {v:.4f}" for k, v in recall.items()]) if recall else "N/A"
+                                    print(f"    {status_icon} {task_name}: mIoU {miou:.4f}, {recall_str}")
+                                    print(f"        Valid: {valid_samples}, Invalid: {invalid_samples}, Total: {predictions}")
+                            else:
+                                error = task_info.get('error', 'Unknown error')
+                                print(f"    {status_icon} {task_name}: Failed - {error}")
+                    
+                    if 'successful_task_count' in evaluation_metrics:
+                        total_tasks = evaluation_metrics.get('total_tasks', 0)
+                        successful = evaluation_metrics['successful_task_count']
+                        print(f"  Overall Success Rate: {successful}/{total_tasks} tasks")
+                        
+            # Handle legacy result formats for backward compatibility
+            elif result['script'] == 'eval_acqa.py' and isinstance(result['results'], dict):
                 # Special formatting for ActivityNetQA results
                 acqa_results = result['results']
                 print(f"ActivityNetQA Results:")
@@ -421,6 +687,14 @@ def run_all(args):
                             print(f"  {key}: {value}")
                 else:
                     print(f"Results: {json.dumps(result['results'], indent=2)}")
+                    
+        elif result['status'] == 'partial_success':
+            print(f"⚠ Inference completed but evaluation failed")
+            print(f"Evaluation Error: {result.get('evaluation_error', 'Unknown error')}")
+            # Still show inference results if available
+            if 'results' in result:
+                print(f"Inference completed successfully with {result['results'].get('total_questions', 'N/A')} items")
+                
         elif result['status'] == 'error':
             print(f"Error: {result['error']}")
         print("-" * 30)
