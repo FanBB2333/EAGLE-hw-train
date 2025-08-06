@@ -153,29 +153,110 @@ def run_evaluation_only(script_name, model_path, datasets=None, output_path=None
         # Look for prediction files
         prediction_files = []
         if script_name == "eval_acqa.py":
-            acqa_file = base_output_dir / "acqa.json"
-            if acqa_file.exists():
-                prediction_files.append(str(acqa_file))
+            # Try multiple possible file locations for acqa
+            possible_acqa_files = [
+                base_output_dir / "acqa.json",
+                base_output_dir / "acqa" / "acqa.json",
+                base_output_dir / model_name / "acqa.json"
+            ]
+            for acqa_file in possible_acqa_files:
+                if acqa_file.exists():
+                    prediction_files.append(str(acqa_file))
+                    break
         elif script_name == "eval_video_qwen.py":
-            # Look for video prediction files
+            # Look for video prediction files in multiple possible formats
             for dataset in datasets or ['activitynet', 'charades', 'qvhighlights', 'youcook2', 'mvbench']:
-                pred_file = base_output_dir / f"{dataset}.json"
-                if pred_file.exists():
-                    prediction_files.append(str(pred_file))
+                # Try multiple possible file locations and naming conventions
+                possible_files = [
+                    base_output_dir / f"{dataset}.json",
+                    base_output_dir / f"{dataset}_output.json",
+                    base_output_dir / dataset / f"{dataset}.json",
+                    base_output_dir / model_name / f"{dataset}.json"
+                ]
+                for pred_file in possible_files:
+                    if pred_file.exists():
+                        prediction_files.append(str(pred_file))
+                        break
         
         if not prediction_files:
+            # Create detailed error message showing what files were searched for
+            searched_locations = []
+            if script_name == "eval_acqa.py":
+                searched_locations = [
+                    str(base_output_dir / "acqa.json"),
+                    str(base_output_dir / "acqa" / "acqa.json"),
+                    str(base_output_dir / model_name / "acqa.json")
+                ]
+            elif script_name == "eval_video_qwen.py":
+                for dataset in datasets or ['activitynet', 'charades', 'qvhighlights', 'youcook2', 'mvbench']:
+                    searched_locations.extend([
+                        str(base_output_dir / f"{dataset}.json"),
+                        str(base_output_dir / f"{dataset}_output.json"),
+                        str(base_output_dir / dataset / f"{dataset}.json"),
+                        str(base_output_dir / model_name / f"{dataset}.json")
+                    ])
+            
             return {
                 'script': script_name,
                 'status': 'error',
-                'error': f'No prediction files found in {base_output_dir}. Expected files: {[f"{d}.json" for d in (datasets or ["acqa"])]}'
+                'error': f'No prediction files found in {base_output_dir}. Searched locations: {searched_locations[:10]}...' if len(searched_locations) > 10 else f'No prediction files found. Searched locations: {searched_locations}'
             }
         
         print(f"Found prediction files: {prediction_files}")
         
         try:
             # Call parse_output to get evaluation metrics
-            # For eval_only mode, we pass None as evaluation_results to force loading from files
-            evaluation_metrics = parse_output(evaluation_results=None, args=args)
+            # For eval_only mode, we need to construct a proper evaluation_results structure
+            if script_name == "eval_acqa.py":
+                # For eval_acqa, pass None to force loading from files
+                evaluation_metrics = parse_output(evaluation_results=None, args=args)
+            elif script_name == "eval_video_qwen.py":
+                # For eval_video_qwen, construct a proper evaluation_results structure
+                # Since parse_output expects specific structure, we need to create it
+                mock_evaluation_results = {
+                    'status': 'success',
+                    'total_tasks': len(prediction_files),
+                    'successful_tasks': [],
+                    'failed_tasks': [],
+                    'success_rate': 0.0,
+                    'detailed_results': {}
+                }
+                
+                # Process each prediction file to build the structure
+                for pred_file in prediction_files:
+                    file_path = Path(pred_file)
+                    task_name = file_path.stem.replace('_output', '')  # Remove _output suffix
+                    
+                    try:
+                        with open(pred_file, 'r') as f:
+                            predictions = json.load(f)
+                        
+                        mock_evaluation_results['successful_tasks'].append(task_name)
+                        mock_evaluation_results['detailed_results'][task_name] = {
+                            'status': 'success',
+                            'total_predictions': len(predictions) if isinstance(predictions, list) else 1,
+                            'output_file': pred_file,
+                            'task_specific_info': {
+                                'description': f'Loaded from existing prediction file: {pred_file}'
+                            }
+                        }
+                    except Exception as e:
+                        mock_evaluation_results['failed_tasks'].append(task_name)
+                        mock_evaluation_results['detailed_results'][task_name] = {
+                            'status': 'error',
+                            'error': f'Failed to load prediction file {pred_file}: {str(e)}'
+                        }
+                
+                # Update success rate
+                total_tasks = len(mock_evaluation_results['successful_tasks']) + len(mock_evaluation_results['failed_tasks'])
+                if total_tasks > 0:
+                    mock_evaluation_results['success_rate'] = len(mock_evaluation_results['successful_tasks']) / total_tasks
+                    mock_evaluation_results['total_tasks'] = total_tasks
+                
+                evaluation_metrics = parse_output(evaluation_results=mock_evaluation_results, args=args)
+            else:
+                evaluation_metrics = parse_output(evaluation_results=None, args=args)
+                
             print(f"✓ {script_name} evaluation completed successfully")
             
             # Create a mock inference results structure for compatibility
