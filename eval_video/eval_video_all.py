@@ -68,8 +68,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run all video evaluation tasks")
     parser.add_argument(
         "--model_path", 
-        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02",
-        # default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02-pass5",
+        # default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02",
+        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02-pass5",
         help="Path to the pretrained model"
     )
     parser.add_argument(
