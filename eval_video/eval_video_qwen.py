@@ -173,11 +173,13 @@ def gen_prompt(data, args, task):
     elif task in ["youcook2"]:
         duration = data["duration"]
         # question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+        mid_range_start = duration * 0.2  # 20% of duration
+        mid_range_end = duration * 0.8    # 80% of duration
         question1 = (
             f'The video\'s duration is {duration}s. '
             f'Please predict the start time (in seconds) of the event "{data["question"]}" in this video. '
-            f'The start time should be a positive value greater than 0, and within the range 1 to {duration} seconds. '
-            f'Avoid giving 0 unless the event truly starts exactly at the very beginning.'
+            f'The start time should typically be in the middle portion of the video, preferably between {mid_range_start:.1f}s and {mid_range_end:.1f}s. '
+            f'Avoid giving values too close to 0 or {duration}s unless the event truly occurs at the very beginning or end.'
             f' The event starts at'
         )
 
