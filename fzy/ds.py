@@ -559,7 +559,7 @@ class YouCook2(VideoDS):
                 'answer': [start_time, end_time],
                 'duration': duration,
             })
-            print(f"{str(video_path_8)}: {duration}")
+            # print(f"{str(video_path_8)}: {duration}")
         # self.data = data
         ignore_idx = [1032, 1908, 3076]
         self.data = self.filter_data(ignore_idx, data)
