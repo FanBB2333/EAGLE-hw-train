@@ -138,6 +138,21 @@ def get_predictions(pred) -> float:
         return float(ans)
     
     return NONE_VALUE
+
+
+def get_last_number(pred) -> float:
+    '''
+    get the last number from prediction text for youcook2 dataset
+    '''
+    import re
+    pred = pred.strip()
+    
+    # 找到所有数字
+    matches = re.findall(r'\d+', pred)
+    if matches:
+        return float(matches[-1])  # 返回最后一个数字
+    
+    return NONE_VALUE
     
 
 def eval_mvbench(res):
@@ -274,8 +289,11 @@ def eval_temporal_localization_from_results(inference_results: list, dataset_nam
         prediction_text = item.get("prediction", "")
         answer = item.get("answer", [])
         
-        # Extract prediction start time
-        prediction_start = get_predictions(prediction_text)
+        # Extract prediction start time - use different extraction methods for different datasets
+        if dataset_name == "youcook2":
+            prediction_start = get_last_number(prediction_text)  # Use last number for youcook2
+        else:
+            prediction_start = get_predictions(prediction_text)  # Use first number for other datasets
         
         if prediction_start == NONE_VALUE:
             invalid_predictions += 1
