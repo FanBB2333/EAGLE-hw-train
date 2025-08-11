@@ -68,8 +68,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run all video evaluation tasks")
     parser.add_argument(
         "--model_path", 
-        # default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02",
-        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02-pass5",
+        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02",
+        # default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02-pass5",
         help="Path to the pretrained model"
     )
     parser.add_argument(
@@ -87,7 +87,7 @@ def parse_args():
     )
     parser.add_argument(
         "--gpus", 
-        default="3",
+        default="2",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
     )
     parser.add_argument(

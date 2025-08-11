@@ -75,7 +75,9 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default="./checkpoints/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava-294-168-old", 
+        # default="./checkpoints/finetune-video-llama3.2-3b-fzy-qwen2vl-llava-llava-294-168-old", 
+        default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02",
+        # default="./checkpoints/Videos/merged_model/finetune-video-llama3.2-3b-merged1-qwen-0.98-0.02-pass5",
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -170,7 +172,13 @@ def gen_prompt(data, args, task):
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     elif task in ["youcook2"]:
         duration = data["duration"]
-        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+        question1 = (
+            f'The video\'s duration is {duration}s. '
+            f'Please predict the start time (in seconds) of the event "{data["question"]}" in this video. '
+            f'The start time should be a positive value greater than 0, and within the range 1 to {duration} seconds. '
+            f'Avoid giving 0 unless the event truly starts exactly at the very beginning.'
+            f' The event starts at'
+        )
 
     elif task in ["mvbench"]:
         question1 = data["question"]
