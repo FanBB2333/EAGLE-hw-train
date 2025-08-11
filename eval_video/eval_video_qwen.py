@@ -85,7 +85,7 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--task",
-        default="charades",
+        default="youcook2",
         help="Task name(s) to evaluate. Can be a single task or multiple tasks separated by comma. "
              "Available tasks: activitynet, breakfast, charades, qvhighlights, valor, youcook2, mvbench",
     )
@@ -164,10 +164,14 @@ def gen_prompt(data, args, task):
         duration = data["duration"]
         question1 = f'The video lasts {duration:.1f} seconds. Please output the step-by-step actions the person is doing with start and end timestamps in the video.'
         question2 = f'Based on the provided video, the step-by-step actions the person is doing with start and end timestamps in the video are:\nFrom 00:'
-    elif task in ["valor", "youcook2"]:
+    elif task in ["valor"]:
         duration = data["duration"]
         # question1 = f"{data['question']}"
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+    elif task in ["youcook2"]:
+        duration = data["duration"]
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+
     elif task in ["mvbench"]:
         question1 = data["question"]
     else:
