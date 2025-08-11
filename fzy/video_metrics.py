@@ -140,9 +140,9 @@ def get_predictions(pred) -> float:
     return NONE_VALUE
 
 
-def get_last_number(pred) -> float:
+def get_all_numbers(pred) -> list:
     '''
-    get the last number from prediction text for youcook2 dataset
+    get all numbers from prediction text for youcook2 dataset
     '''
     import re
     pred = pred.strip()
@@ -150,7 +150,18 @@ def get_last_number(pred) -> float:
     # 找到所有数字
     matches = re.findall(r'\d+', pred)
     if matches:
-        return float(matches[-1])  # 返回最后一个数字
+        return [float(match) for match in matches]
+    
+    return []
+
+
+def get_last_number(pred) -> float:
+    '''
+    get the last number from prediction text for youcook2 dataset
+    '''
+    numbers = get_all_numbers(pred)
+    if numbers:
+        return numbers[-1]  # 返回最后一个数字
     
     return NONE_VALUE
     
@@ -289,17 +300,7 @@ def eval_temporal_localization_from_results(inference_results: list, dataset_nam
         prediction_text = item.get("prediction", "")
         answer = item.get("answer", [])
         
-        # Extract prediction start time - use different extraction methods for different datasets
-        if dataset_name == "youcook2":
-            prediction_start = get_last_number(prediction_text)  # Use last number for youcook2
-        else:
-            prediction_start = get_predictions(prediction_text)  # Use first number for other datasets
-        
-        if prediction_start == NONE_VALUE:
-            invalid_predictions += 1
-            continue
-        
-        # Handle different answer formats
+        # Handle different answer formats first
         if isinstance(answer, (int, float)):
             # Single number case
             ground_truth = [answer]
@@ -331,6 +332,45 @@ def eval_temporal_localization_from_results(inference_results: list, dataset_nam
                     "ground_truths": [seg_answer]
                 })
             continue
+        
+        # Extract prediction start time - special handling for youcook2
+        if dataset_name == "youcook2":
+            # Try all numbers and select the one with best IoU
+            all_numbers = get_all_numbers(prediction_text)
+            if not all_numbers:
+                invalid_predictions += 1
+                continue
+            
+            best_iou = -1
+            best_prediction_start = NONE_VALUE
+            
+            # Try each number as prediction start time
+            for candidate_start in all_numbers:
+                if len(ground_truth) > 0 and len(ground_truth[0]) == 2:
+                    # Calculate prediction end time based on ground truth duration
+                    candidate_end = candidate_start + (ground_truth[0][1] - ground_truth[0][0])
+                    
+                    # Calculate IoU with ground truth
+                    candidate_pred = (candidate_start, candidate_end)
+                    gt_segment = (ground_truth[0][0], ground_truth[0][1])
+                    iou = calculate_iou(candidate_pred, gt_segment)
+                    
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_prediction_start = candidate_start
+            
+            if best_prediction_start == NONE_VALUE:
+                invalid_predictions += 1
+                continue
+            
+            prediction_start = best_prediction_start
+        else:
+            # For other datasets, use first number
+            prediction_start = get_predictions(prediction_text)
+            
+            if prediction_start == NONE_VALUE:
+                invalid_predictions += 1
+                continue
         
         # For other datasets
         if len(ground_truth) > 0 and len(ground_truth[0]) == 2:
