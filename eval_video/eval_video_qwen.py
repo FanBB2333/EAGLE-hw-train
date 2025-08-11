@@ -172,13 +172,14 @@ def gen_prompt(data, args, task):
         question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
     elif task in ["youcook2"]:
         duration = data["duration"]
-        question1 = (
-            f'The video\'s duration is {duration}s. '
-            f'Please predict the start time (in seconds) of the event "{data["question"]}" in this video. '
-            f'The start time should be a positive value greater than 0, and within the range 1 to {duration} seconds. '
-            f'Avoid giving 0 unless the event truly starts exactly at the very beginning.'
-            f' The event starts at'
-        )
+        question1 = f'The video\'s duration is {duration}s. Please predict the start time of the event "{data["question"]}" in this video, the event starts at'
+        # question1 = (
+        #     f'The video\'s duration is {duration}s. '
+        #     f'Please predict the start time (in seconds) of the event "{data["question"]}" in this video. '
+        #     f'The start time should be a positive value greater than 0, and within the range 1 to {duration} seconds. '
+        #     f'Avoid giving 0 unless the event truly starts exactly at the very beginning.'
+        #     f' The event starts at'
+        # )
 
     elif task in ["mvbench"]:
         question1 = data["question"]

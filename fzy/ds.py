@@ -552,6 +552,8 @@ class YouCook2(VideoDS):
             start_time, end_time = float(segment[0]), float(segment[1])
             video_path = Path(str(video_path_8).replace("raw_videos_8", "raw_videos"))
             duration = get_video_length(video_path)
+            if duration is None:
+                continue
             data.append({
                 'idx': i,
                 'data_path': str(video_path_8),
@@ -559,7 +561,7 @@ class YouCook2(VideoDS):
                 'answer': [start_time, end_time],
                 'duration': duration,
             })
-            # print(f"{str(video_path_8)}: {duration}")
+            print(f"{str(video_path_8)}: {duration}")
         # self.data = data
         ignore_idx = [1032, 1908, 3076]
         self.data = self.filter_data(ignore_idx, data)
