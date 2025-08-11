@@ -434,9 +434,6 @@ def evaluate_single_task(args: Union[argparse.Namespace, None] = None, task: str
             # print(text_outputs)
         except Exception as e:
             continue
-        #     eval_logger.error(f"Error {e} in generating")
-        #     cont = ""
-        #     text_outputs = [""]
         gen_list.append({
             "task": task,
             **data,
