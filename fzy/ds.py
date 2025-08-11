@@ -528,7 +528,6 @@ class YouCook2(VideoDS):
         return ret
     def load_data(self):
         val_video_path_8 = self.video_path_8 / "validation"
-        val_video_path = self.video_path / "validation"
         # val file
         val_file = self.anno_path / "youcook2_val.csv"
         val_data = pd.read_csv(val_file)
@@ -539,7 +538,6 @@ class YouCook2(VideoDS):
             query = row['sentence']
             recipe_type = row['recipe_type']
             video_path_8 = val_video_path_8 / str(recipe_type) / f"{row['youtube_id']}"
-            video_path = val_video_path / str(recipe_type) / f"{row['youtube_id']}"
             # print(f"Loading video: {video_path}")
             # test whether video_path.mp4 or video_path.mkv exist
             mp4_path = video_path_8.with_suffix('.mp4')
@@ -552,6 +550,7 @@ class YouCook2(VideoDS):
                 continue
             segment = segment.replace("[", "").replace("]", "").split()
             start_time, end_time = float(segment[0]), float(segment[1])
+            video_path = Path(str(video_path_8).replace("raw_videos_8", "raw_videos"))
             duration = get_video_length(video_path)
             data.append({
                 'idx': i,
