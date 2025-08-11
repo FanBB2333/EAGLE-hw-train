@@ -335,6 +335,8 @@ def eval_temporal_localization_from_results(inference_results: list, dataset_nam
         
         # Extract prediction start time - special handling for youcook2
         if dataset_name == "youcook2":
+            prediction_start = get_predictions(prediction_text)
+        elif dataset_name == "":
             # Try all numbers and select the one with best IoU
             all_numbers = get_all_numbers(prediction_text)
             if not all_numbers:
