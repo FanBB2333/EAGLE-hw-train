@@ -184,9 +184,12 @@ def eval_mvbench(res):
         pred_splits = pred.split()
         # filter the stop words
         pred_splits = [ps for ps in pred_splits if ps not in ["the", "a", "an", "is", "are", "was", "were", "to", "of"]]
-        for ps in pred_splits:
-            if ps in gt or gt in ps:
-                return True
+        # 只有当至少有3个ps且所有ps都存在于gt中时，才返回True
+        if len(pred_splits) >= 3:
+            for ps in pred_splits:
+                if ps not in gt and gt not in ps:
+                    return False
+            return True
         return False
     # {
     #     "task": "mvbench",
@@ -253,10 +256,13 @@ def eval_mvbench_from_results(inference_results: list) -> dict:
                 return True
         pred_splits = pred.split()
         # filter the stop words
-        pred_splits = [ps for ps in pred_splits if ps not in ["the", "a", "an", "is", "are", "was", "were", "to", "of"]]
-        for ps in pred_splits:
-            if ps in gt or gt in ps:
-                return True
+        pred_splits = [ps.strip() for ps in pred_splits if ps not in ["the", "a", "an", "is", "are", "was", "were", "to", "of", "am", "blue"]]
+        # 只有当至少有3个ps且所有ps都存在于gt中时，才返回True
+        if len(pred_splits) >= 1:
+            for ps in pred_splits:
+                if ps not in gt:
+                    return False
+            return True
         return False
     
     all_res = list()
