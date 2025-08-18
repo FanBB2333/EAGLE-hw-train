@@ -249,7 +249,13 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
             textvqa_ocr_results = json.load(f)
     else:
         textvqa_ocr_results = {}
-        print(f"Warning: OCR results file {textvqa_ocr_res} not found. Skipping OCR results for TextVQA.")    
+        print(f"Warning: OCR results file {textvqa_ocr_res} not found. Skipping OCR results for TextVQA.") 
+    chartqa_ocr_res = Path(__file__).parent / "chartqa_ocr_results.json"
+    if chartqa_ocr_res.exists():
+        with open(chartqa_ocr_res, "r", encoding="utf-8") as f:
+            chartqa_ocr_results = json.load(f)
+    else:
+        chartqa_ocr_results = {}
     # Process each dataset
     for dataset_name, test_dataset in test_datasets.items():
         print(f"Running inference on {dataset_name}...")
@@ -306,6 +312,13 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
                 # ChartQA has 'answer' field (single string)
                 answers = [data['answer'].strip()] if data['answer'] else []
                 question_id = f"{dataset_name}_{i}"
+                # add paddleocr results if available
+                if str(i) in chartqa_ocr_results:
+                    ocr_data = chartqa_ocr_results[str(i)]
+                    if ocr_data:
+                        rec_texts = ocr_data['rec_texts']
+                        question = f"{question}\nOCR results: {', '.join(rec_texts)}"
+                        question = f"{question}\nPlease answer the question using a single word or phrase."
             else:
                 answers = []
                 question_id = f"{dataset_name}_{i}"
