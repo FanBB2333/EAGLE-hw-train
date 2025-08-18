@@ -100,10 +100,10 @@ def get_chartqa_results():
         lang="en"
     )
     ocr_results = dict()
-    for data in tqdm(ds, total=len(ds)):
+    for idx, data in tqdm(enumerate(ds), total=len(ds)):
         image = data['image'].convert('RGB')
         ocr_result = get_ocr_result(image, ocr)
-        ocr_results[data['image_id']] = ocr_result
+        ocr_results[idx] = ocr_result
 
     with open("chartqa_ocr_results.json", "w", encoding="utf-8") as f:
         json.dump(ocr_results, f, ensure_ascii=False, indent=4)
