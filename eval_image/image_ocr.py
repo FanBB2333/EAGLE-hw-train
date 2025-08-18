@@ -90,6 +90,26 @@ def get_textvqa_results():
         json.dump(ocr_results, f, ensure_ascii=False, indent=4)
     return ocr_results
 
+def get_chartqa_results():
+    ds = load_dataset("lmms-lab/ChartQA", split="test")
+    ocr = PaddleOCR(
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        device="cpu",
+        lang="en"
+    )
+    ocr_results = dict()
+    for data in tqdm(ds, total=len(ds)):
+        image = data['image'].convert('RGB')
+        ocr_result = get_ocr_result(image, ocr)
+        ocr_results[data['image_id']] = ocr_result
+
+    with open("chartqa_ocr_results.json", "w", encoding="utf-8") as f:
+        json.dump(ocr_results, f, ensure_ascii=False, indent=4)
+    return ocr_results
+
 if __name__ == "__main__":
-    get_textvqa_results()
+    # get_textvqa_results()
+    get_chartqa_results()
     
