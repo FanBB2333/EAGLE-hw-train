@@ -317,6 +317,7 @@ def run_inference(args: Union[argparse.Namespace, None] = None) -> dict:
                     ocr_data = chartqa_ocr_results[str(i)]
                     if ocr_data:
                         rec_texts = ocr_data['rec_texts']
+                        rec_texts = rec_texts[:3]  # Limit to first 3 texts for brevity
                         question = f"{question}\nOCR results: {', '.join(rec_texts)}"
                         question = f"{question}\nPlease answer the question using a single word or phrase."
             else:
