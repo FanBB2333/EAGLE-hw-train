@@ -26,6 +26,7 @@ try:
     import vllm
 except Exception as e:
     print(f"Warning: vllm import failed: {e}. VLLM-based labeling will not work.")
+import openai
 import json
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6"
@@ -541,6 +542,88 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     print(f"Results saved to: {output_json_path}")
     
     return results
+
+def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json", output_dir: str = None):
+    """
+    使用OpenAI API对OCRBench v2数据集进行标注
+    """
+    import openai
+    
+    print("Using OpenAI API for labeling...")
+    
+    # 加载数据集
+    json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
+    with open(json_data_path, 'r', encoding='utf-8') as f:
+        json_data = json.load(f)
+    
+    img_dir = str(PROJECT_ROOT / 'eval_image/OCRBench_v2')
+    
+    # 准备输出目录
+    if output_dir is None:
+        model_name = get_model_name(model_name_or_path)
+        current_date = datetime.now().strftime("%m%d")
+        output_dir = str(PROJECT_ROOT / f'eval_image/labeled_data/{model_name}_{current_date}')
+    
+    os.makedirs(output_dir, exist_ok=True)
+    images_output_dir = os.path.join(output_dir, 'images')
+    os.makedirs(images_output_dir, exist_ok=True)
+    
+    print(f"Processing {len(json_data)} samples...")
+    results = []
+    
+    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with OpenAI API")):
+        # 构建问题
+        question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
+        
+        # 检查图片是否存在
+        image_path = os.path.join(img_dir, data_dict['image_path'])
+        if not os.path.exists(image_path):
+            continue
+        
+        # 使用OpenAI的多模态消息格式
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": f"file://{image_path}",
+                    },
+                    {"type": "text", "text": question},
+                ],
+            }
+        ]
+        
+        try:
+            response = openai.chat.completions.create(
+                model=model_name_or_path,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=50,
+            )
+            prediction = response.choices[0].message['content'].strip()
+        except Exception as e:
+            print(f"Error calling OpenAI API for sample {i}: {e}")
+            continue
+
+        # 保存结果
+        result_item = {
+            "image_path": data_dict['image_path'],
+            "question": data_dict['question'],
+            "prediction": prediction
+        }
+        results.append(result_item)
+
+    # 保存结果
+    output_json_path = os.path.join(output_dir, 'labeled_ocrbench_v2.json')
+    with open(output_json_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+
+    print(f"Labeled {len(results)} samples using OpenAI API")
+    print(f"Results saved to: {output_json_path}")
+
+    return results
+
 
 if __name__ == '__main__':
     import argparse
