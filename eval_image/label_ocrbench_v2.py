@@ -103,19 +103,22 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
     try:
         # 设置VLLM参数 - 根据模型类型调整参数
         from vllm import LLM, SamplingParams
+        from PIL import Image
         import torch
         
-        # 获取可用GPU数量
-        gpu_count = torch.cuda.device_count()
-        print(f"Available GPUs: {gpu_count}")
+        # 获取可用GPU数量，限制使用4张
+        gpu_count = min(torch.cuda.device_count(), 4)  # 最多使用4张GPU
+        print(f"Available GPUs: {torch.cuda.device_count()}, Using: {gpu_count}")
         
-        # 更保守的VLLM参数设置，减少失败概率
+        # 更保守的VLLM参数设置，避免内存问题
         vllm_kwargs = {
             "model": model_name_or_path,
-            "tensor_parallel_size": min(gpu_count, 4) if gpu_count > 1 else 1,  # 限制最大并行度
+            "tensor_parallel_size": gpu_count,
             "trust_remote_code": True,
-            "max_model_len": 2048,  # 减少内存使用
-            "gpu_memory_utilization": 0.8,  # 预留一些GPU内存
+            "max_model_len": 3072,  # 降低模型长度减少内存使用
+            "gpu_memory_utilization": 0.95,  # 降低GPU内存使用率
+            "swap_space": 2,  # 减少swap空间
+            "disable_custom_all_reduce": True,  # 禁用自定义all_reduce，避免通信问题
         }
         
         # 对于已知的多模态模型添加特定配置
@@ -127,11 +130,16 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
         # 采样参数
         sampling_params = SamplingParams(
             temperature=0.0,
-            max_tokens=50,  # 减少生成长度
+            max_tokens=50,  # 减少生成长度以降低内存压力
             stop=None
         )
         
         print("VLLM model loaded successfully!")
+        
+        # 清理GPU内存缓存
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("Cleared GPU memory cache after model loading")
         
     except Exception as e:
         print(f"Error loading VLLM model: {e}")
@@ -169,30 +177,40 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
     # 进行推理
     results = []
     
-    # 准备输入数据
+    # 准备输入数据 - 修改为支持多模态
     inputs = []
     valid_indices = []
     
     for i, data_dict in enumerate(json_data):
+        # 构建问题
+        question = data_dict['question']
+        # 添加提示词以提高回答质量
+        question_with_prompt = question + '\nAnswer the question using a single word or phrase.'
+        
+        # 检查图片是否存在
+        image_path = os.path.join(img_dir, data_dict['image_path'])
+        if not os.path.exists(image_path):
+            print(f"Warning: Image not found: {image_path}")
+            continue
+        
+        # 加载图片
         try:
-            # 构建问题
-            question = data_dict['question']
-            # 添加提示词以提高回答质量
-            question_with_prompt = question + '\nAnswer the question using a single word or phrase.'
+            image = Image.open(image_path).convert('RGB')
+            print(f"Preparing input {i+1}/{len(json_data)}: {data_dict['image_path']}, size: {image.size}")
             
-            # 检查图片是否存在
-            image_path = os.path.join(img_dir, data_dict['image_path'])
-            if not os.path.exists(image_path):
-                print(f"Warning: Image not found: {image_path}")
-                continue
-            
-            # 对于VLLM，需要准备适当的输入格式
-            # 这里假设使用文本提示，实际的多模态处理可能需要不同的格式
-            prompt = f"<image>{question_with_prompt}"
+            # 对于VLLM，使用标准的多模态消息格式
+            messages = [
+                {
+                    "role": "user", 
+                    "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": question_with_prompt}
+                    ]
+                }
+            ]
             
             inputs.append({
-                "prompt": prompt,
-                "image_path": image_path,
+                "messages": messages,
                 "data_index": i
             })
             valid_indices.append(i)
@@ -205,67 +223,101 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
     
     # 批量推理
     try:
-        # 注意：这里的实现取决于具体的VLLM版本和多模态支持
-        # 对于不支持多模态的版本，可能需要fallback到transformers
-        print("Starting VLLM inference...")
-        prompts = [inp["prompt"] for inp in inputs]
+        print("Starting VLLM multimodal inference...")
         
-        # 分批处理以避免内存问题
-        batch_size = 32  # 可以根据GPU内存调整
+        # 分批处理以避免内存问题，提高GPU利用率
+        if gpu_count >= 4:
+            batch_size = 4   # 大幅减少批大小
+        elif gpu_count >= 2:
+            batch_size = 2   # 2张GPU，小批次
+        else:
+            batch_size = 1   # 单GPU，逐个处理
+        
+        print(f"Using conservative VLLM batch size: {batch_size} for {gpu_count} GPUs")
         all_outputs = []
         
-        for i in range(0, len(prompts), batch_size):
-            batch_prompts = prompts[i:i+batch_size]
-            print(f"Processing batch {i//batch_size + 1}/{(len(prompts) + batch_size - 1)//batch_size}")
-            batch_outputs = llm.generate(batch_prompts, sampling_params)
-            all_outputs.extend(batch_outputs)
+        for i in range(0, len(inputs), batch_size):
+            batch_inputs = inputs[i:i+batch_size]
+            batch_messages = [inp["messages"] for inp in batch_inputs]
+            
+            print(f"Processing VLLM batch {i//batch_size + 1}/{(len(inputs) + batch_size - 1)//batch_size}")
+            
+            try:
+                # 在每批处理前清理内存
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # VLLM 多模态推理
+                batch_outputs = llm.chat(batch_messages, sampling_params)
+                all_outputs.extend(batch_outputs)
+                
+            except Exception as batch_error:
+                print(f"Error in batch {i//batch_size + 1}: {batch_error}")
+                print("Trying to process batch items individually...")
+                
+                # 如果批处理失败，尝试逐个处理
+                for single_messages in batch_messages:
+                    try:
+                        single_output = llm.chat([single_messages], sampling_params)
+                        all_outputs.extend(single_output)
+                    except Exception as single_error:
+                        print(f"Error processing single item: {single_error}")
+                        # 创建空输出以保持索引一致
+                        all_outputs.append(None)
         
         outputs = all_outputs
         
         # 处理输出
         for i, (inp, output) in enumerate(zip(inputs, outputs)):
-            try:
-                data_index = inp["data_index"]
-                data_dict = json_data[data_index]
-                
-                if output.outputs and len(output.outputs) > 0:
+            data_index = inp["data_index"]
+            data_dict = json_data[data_index]
+            
+            # 处理可能的None输出
+            if output is None:
+                prediction = ""
+                print(f"Warning: Failed to process sample {data_index}")
+            else:
+                # 提取VLLM chat输出
+                if hasattr(output, 'outputs') and output.outputs and len(output.outputs) > 0:
                     prediction = output.outputs[0].text.strip()
+                elif hasattr(output, 'content') and output.content:
+                    prediction = output.content.strip()
                 else:
-                    prediction = ""
-                    print(f"Warning: Empty output for sample {data_index}")
-                
-                # 复制图片到输出目录
-                image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
-                image_output_path = os.path.join(images_output_dir, image_filename)
-                shutil.copy2(inp["image_path"], image_output_path)
-                
-                # 构建结果项
-                result_item = {
-                    "id": str(data_dict['id']),
-                    "conversations": [
-                        {
-                            "from": "human",
-                            "value": data_dict['question'] + "\n<image>"
-                        },
-                        {
-                            "from": "gpt", 
-                            "value": prediction
-                        }
-                    ],
-                    "image_abs": image_output_path,
-                    "image": f"images/{image_filename}",
-                    "original_question": data_dict['question'],
-                    "original_answers": data_dict.get('answers', []),
-                    "dataset_name": data_dict.get('dataset_name', ''),
-                    "type": data_dict.get('type', ''),
-                    "image_path": data_dict['image_path']
-                }
-                
-                results.append(result_item)
-                
-            except Exception as e:
-                print(f"Error processing output for sample {i}: {e}")
-                continue
+                    prediction = str(output).strip() if output else ""
+                    print(f"Warning: Unexpected output format for sample {data_index}")
+            
+            if not prediction:
+                print(f"Warning: Empty output for sample {data_index}")
+            
+            # 复制图片到输出目录
+            image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
+            image_output_path = os.path.join(images_output_dir, image_filename)
+            image_source_path = os.path.join(img_dir, data_dict['image_path'])
+            shutil.copy2(image_source_path, image_output_path)
+            
+            # 构建结果项
+            result_item = {
+                "id": str(data_dict['id']),
+                "conversations": [
+                    {
+                        "from": "human",
+                        "value": data_dict['question'] + "\n<image>"
+                    },
+                    {
+                        "from": "gpt", 
+                        "value": prediction
+                    }
+                ],
+                "image_abs": image_output_path,
+                "image": f"images/{image_filename}",
+                "original_question": data_dict['question'],
+                "original_answers": data_dict.get('answers', []),
+                "dataset_name": data_dict.get('dataset_name', ''),
+                "type": data_dict.get('type', ''),
+                "image_path": data_dict['image_path']
+            }
+            
+            results.append(result_item)
                 
     except Exception as e:
         print(f"Error during VLLM inference: {e}")
