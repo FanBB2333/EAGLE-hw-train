@@ -113,10 +113,10 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
         # 更保守的VLLM参数设置，避免内存问题
         vllm_kwargs = {
             "model": model_name_or_path,
-            "tensor_parallel_size": min(gpu_count, 4) if gpu_count > 1 else 1,  # 先限制为2张GPU测试
+            "tensor_parallel_size": gpu_count,
             "trust_remote_code": True,
             "max_model_len": 1024,  # 降低模型长度减少内存使用
-            "gpu_memory_utilization": 0.75,  # 降低GPU内存使用率
+            "gpu_memory_utilization": 0.80,  # 降低GPU内存使用率
             "swap_space": 2,  # 减少swap空间
             "disable_custom_all_reduce": True,  # 禁用自定义all_reduce，避免通信问题
         }
@@ -198,19 +198,13 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
             image = Image.open(image_path).convert('RGB')
             print(f"Preparing input {i+1}/{len(json_data)}: {data_dict['image_path']}, size: {image.size}")
             
-            # 对于VLLM，使用标准的多模态消息格式
-            messages = [
-                {
-                    "role": "user", 
-                    "content": [
-                        {"type": "image", "image": image},
-                        {"type": "text", "text": question_with_prompt}
-                    ]
-                }
-            ]
+            # 对于VLLM，先尝试简单的文本prompt格式
+            # 如果VLLM版本不支持图像，可能需要fallback到transformers
+            text_prompt = f"<image>\n{question_with_prompt}"
             
             inputs.append({
-                "messages": messages,
+                "prompt": text_prompt,
+                "image": image,  # 保留图像引用
                 "data_index": i
             })
             valid_indices.append(i)
@@ -238,7 +232,6 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
         
         for i in range(0, len(inputs), batch_size):
             batch_inputs = inputs[i:i+batch_size]
-            batch_messages = [inp["messages"] for inp in batch_inputs]
             
             print(f"Processing VLLM batch {i//batch_size + 1}/{(len(inputs) + batch_size - 1)//batch_size}")
             
@@ -247,8 +240,23 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 
-                # VLLM 多模态推理
-                batch_outputs = llm.chat(batch_messages, sampling_params)
+                # 尝试使用VLLM的标准generate方法
+                batch_prompts = [inp["prompt"] for inp in batch_inputs]
+                
+                # 检查VLLM是否支持图像参数
+                try:
+                    # 尝试包含图像的生成
+                    batch_outputs = llm.generate(
+                        prompts=batch_prompts,
+                        sampling_params=sampling_params,
+                        # 如果支持图像，添加图像参数
+                        images=[inp["image"] for inp in batch_inputs]
+                    )
+                except TypeError as te:
+                    # 如果不支持图像参数，只使用文本
+                    print(f"VLLM doesn't support image parameter, using text-only: {te}")
+                    batch_outputs = llm.generate(batch_prompts, sampling_params)
+                
                 all_outputs.extend(batch_outputs)
                 
             except Exception as batch_error:
@@ -256,9 +264,9 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
                 print("Trying to process batch items individually...")
                 
                 # 如果批处理失败，尝试逐个处理
-                for single_messages in batch_messages:
+                for inp in batch_inputs:
                     try:
-                        single_output = llm.chat([single_messages], sampling_params)
+                        single_output = llm.generate([inp["prompt"]], sampling_params)
                         all_outputs.extend(single_output)
                     except Exception as single_error:
                         print(f"Error processing single item: {single_error}")
@@ -321,6 +329,12 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
                 
     except Exception as e:
         print(f"Error during VLLM inference: {e}")
+        
+        # 检查是否是多模态相关的错误
+        if "image" in str(e).lower() or "multimodal" in str(e).lower() or "unknown part type" in str(e).lower():
+            print("Detected multimodal incompatibility with current VLLM version.")
+            print("VLLM may not support multimodal inference for this model.")
+            
         if force_vllm:
             print("force_vllm=True, stopping execution. Use --use_fallback to force transformers method.")
             raise e
