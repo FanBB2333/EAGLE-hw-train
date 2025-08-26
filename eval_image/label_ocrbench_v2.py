@@ -36,6 +36,37 @@ from PIL import Image
 from tqdm import tqdm
 from datetime import datetime
 
+# 检测 bfloat16 支持
+def check_bfloat16_support():
+    """检测当前设备是否支持 bfloat16"""
+    try:
+        if torch.cuda.is_available():
+            # 检查CUDA版本和GPU架构
+            device = torch.cuda.current_device()
+            capability = torch.cuda.get_device_capability(device)
+            
+            # Ampere架构 (8.x) 及以上支持 bfloat16
+            if capability[0] >= 8:
+                # 进一步测试是否真的可以使用 bfloat16
+                test_tensor = torch.tensor([1.0], dtype=torch.bfloat16, device='cuda')
+                return True
+            else:
+                print(f"GPU capability {capability} < 8.0, bfloat16 not supported")
+                return False
+        else:
+            # CPU 也可能支持 bfloat16，但不如 GPU 常见
+            test_tensor = torch.tensor([1.0], dtype=torch.bfloat16)
+            return True
+    except Exception as e:
+        print(f"bfloat16 test failed: {e}")
+        return False
+
+# 全局变量：检测支持的数据类型
+SUPPORTS_BFLOAT16 = check_bfloat16_support()
+PREFERRED_DTYPE = torch.bfloat16 if SUPPORTS_BFLOAT16 else torch.float16
+
+print(f"Data type support check: bfloat16={SUPPORTS_BFLOAT16}, using {PREFERRED_DTYPE}")
+
 QWEN25VL7B = "/home6/fzy/models/Qwen2.5-VL-7B-Instruct"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -279,17 +310,44 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     print("Loading Qwen2.5-VL model using transformers...")
     
-    # 直接加载Qwen2.5-VL模型
+    # 检查可用GPU
+    gpu_count = torch.cuda.device_count()
+    print(f"Available GPUs: {gpu_count}")
+    
+    # 根据GPU数量选择加载策略
+    if gpu_count > 1:
+        print(f"Using device_map='auto' for multi-GPU setup with {gpu_count} GPUs")
+        device_map = "auto"
+    else:
+        print("Using single GPU")
+        device_map = "cuda:0"
+    
+    # 直接加载Qwen2.5-VL模型，使用更保守的参数避免OOM
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         model_name_or_path,
-        torch_dtype="auto",
-        device_map="auto"
+        torch_dtype=PREFERRED_DTYPE,  # 使用检测到的最佳数据类型
+        device_map=device_map,
+        low_cpu_mem_usage=True,  # 减少CPU内存使用
+        # max_memory可以手动指定每个GPU的最大使用量
+        # max_memory={0: "20GB", 1: "20GB"} if gpu_count > 1 else None
     )
     
-    # 加载processor
-    processor = AutoProcessor.from_pretrained(model_name_or_path)
+    # 加载processor，设置更小的图像分辨率以减少显存
+    # 限制图像token数量范围以减少显存使用
+    min_pixels = 256*28*28  # 约200K像素
+    max_pixels = 512*28*28  # 约400K像素，比默认的1280*28*28小很多
+    processor = AutoProcessor.from_pretrained(
+        model_name_or_path,
+        min_pixels=min_pixels,
+        max_pixels=max_pixels
+    )
     
     model.eval()
+    
+    # 启用梯度检查点以进一步减少显存（如果支持）
+    if hasattr(model, 'gradient_checkpointing_enable'):
+        model.gradient_checkpointing_enable()
+        print("Enabled gradient checkpointing to save memory")
     
     # 加载数据集
     json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
@@ -313,7 +371,18 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with Qwen-VL")):
+    # 清理显存
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"Initial GPU memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
+    
+    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with Qwen2.5-VL")):
+        # 每处理一定数量的样本后清理显存
+        if i > 0 and i % 10 == 0:
+            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                print(f"Sample {i}, GPU memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
+        
         # 加载图片
         image_path = os.path.join(img_dir, data_dict['image_path'])
         if not os.path.exists(image_path):
@@ -321,7 +390,14 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
         
         image = Image.open(image_path).convert('RGB')
         
-        # 构建问题 - Qwen-VL格式
+        # 可选：调整图片大小以减少显存使用
+        # max_size = 512  # 限制图片最大尺寸
+        # if max(image.size) > max_size:
+        #     ratio = max_size / max(image.size)
+        #     new_size = tuple(int(dim * ratio) for dim in image.size)
+        #     image = image.resize(new_size, Image.Resampling.LANCZOS)
+        
+        # 构建问题 - Qwen2.5-VL格式
         question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
         
         # 使用Qwen2.5-VL的消息格式
@@ -352,13 +428,18 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
         )
         inputs = inputs.to(device)
         
-        # Generate
+        # Generate - 使用更保守的参数减少显存使用
         with torch.no_grad():
             generated_ids = model.generate(
                 **inputs,
-                max_new_tokens=100,
+                max_new_tokens=50,  # 减少生成长度
                 do_sample=False,
-                temperature=0.0
+                temperature=0.0,
+                use_cache=True,  # 启用KV cache
+                pad_token_id=processor.tokenizer.eos_token_id,
+                # 可以添加以下参数进一步优化显存
+                # num_beams=1,  # 使用beam search=1
+                # early_stopping=True,
             )
         
         generated_ids_trimmed = [
