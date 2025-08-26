@@ -28,6 +28,7 @@ except Exception as e:
     print(f"Warning: vllm import failed: {e}. VLLM-based labeling will not work.")
 import json
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 import shutil
 import torch
 import sys
@@ -332,15 +333,9 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
         # max_memory={0: "20GB", 1: "20GB"} if gpu_count > 1 else None
     )
     
-    # 加载processor，设置更小的图像分辨率以减少显存
-    # 限制图像token数量范围以减少显存使用
-    min_pixels = 256*28*28  # 约200K像素
-    max_pixels = 512*28*28  # 约400K像素，比默认的1280*28*28小很多
-    processor = AutoProcessor.from_pretrained(
-        model_name_or_path,
-        min_pixels=min_pixels,
-        max_pixels=max_pixels
-    )
+    # 加载processor，使用默认设置以保持图片原始大小
+    # 不设置min_pixels和max_pixels，让模型使用原始图片分辨率
+    processor = AutoProcessor.from_pretrained(model_name_or_path)
     
     model.eval()
     
@@ -383,19 +378,13 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
             if torch.cuda.is_available():
                 print(f"Sample {i}, GPU memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB")
         
-        # 加载图片
+        # 加载图片并保持原始大小
         image_path = os.path.join(img_dir, data_dict['image_path'])
         if not os.path.exists(image_path):
             continue
         
         image = Image.open(image_path).convert('RGB')
-        
-        # 可选：调整图片大小以减少显存使用
-        # max_size = 512  # 限制图片最大尺寸
-        # if max(image.size) > max_size:
-        #     ratio = max_size / max(image.size)
-        #     new_size = tuple(int(dim * ratio) for dim in image.size)
-        #     image = image.resize(new_size, Image.Resampling.LANCZOS)
+        print(f"Processing image {i+1}/{len(json_data)}: {data_dict['image_path']}, size: {image.size}")
         
         # 构建问题 - Qwen2.5-VL格式
         question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
