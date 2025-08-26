@@ -549,6 +549,25 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     return results
 
+def check_vllm_server_status(base_url: str = "http://localhost:58000"):
+    """检查VLLM服务器状态"""
+    import requests
+    try:
+        # 检查健康状态
+        health_url = f"{base_url}/health"
+        response = requests.get(health_url, timeout=5)
+        if response.status_code == 200:
+            print(f"✅ VLLM server is running at {base_url}")
+            return True
+        else:
+            print(f"❌ VLLM server responded with status {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to connect to VLLM server at {base_url}: {e}")
+        print("Please start the VLLM server first:")
+        print("  ./start_vllm_server.sh")
+        return False
+
 def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_data_file: str = "OCRBench_v2.json", output_dir: str = None):
     """
     使用OpenAI API对OCRBench v2数据集进行标注
@@ -564,15 +583,33 @@ def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_dat
     
     print(f"Using OpenAI API for OCRBench v2 labeling with model: {model_name_or_path}")
     
-    # 设置OpenAI客户端 - 使用预配置的VLLM服务器
-    api_key = "dummy_key"  # VLLM服务器不需要真实密钥
-    base_url = "http://0.0.0.0:58000/v1"  # VLLM服务器地址
+    # 首先检查VLLM服务器状态
+    base_url = "http://localhost:58000/v1"
+    server_base = "http://localhost:58000"
     
-    openai.api_key = api_key
-    openai.base_url = base_url
+    if not check_vllm_server_status(server_base):
+        raise Exception("VLLM server is not available. Please start it first.")
+    
+    # 设置OpenAI客户端 - 使用预配置的VLLM服务器
+    api_key = "EMPTY"  # VLLM服务器通常使用"EMPTY"作为API密钥
+    
+    # 创建OpenAI客户端实例
+    client = openai.OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+    )
     
     print(f"Using VLLM API server at: {base_url}")
     print(f"Model name: {model_name_or_path}")
+    
+    # 测试连接
+    try:
+        models = client.models.list()
+        print(f"Available models: {[model.id for model in models.data]}")
+    except Exception as e:
+        print(f"Warning: Failed to connect to VLLM server: {e}")
+        print("Please make sure VLLM server is running on port 58000")
+        print("Start server with: ./start_vllm_server.sh")
     
     # 加载数据集
     json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
@@ -643,7 +680,7 @@ def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_dat
             ]
             
             # 调用API
-            response = openai.chat.completions.create(
+            response = client.chat.completions.create(
                 model=model_name_or_path,
                 messages=messages,
                 max_tokens=50,
@@ -740,11 +777,23 @@ if __name__ == '__main__':
     
     if args.method == "api":
         print("Using OpenAI API method with VLLM server...")
-        results = label_ocrv2_api(
-            model_name_or_path="Qwen2.5-VL-7B-Instruct",  # 使用VLLM服务器上的模型名
-            json_data_file=args.json_data_file,
-            output_dir=args.output_dir
-        )
+        print("Note: Make sure VLLM server is running on port 58000")
+        print("Start server with: ./start_vllm_server.sh")
+        print("Test connection with: python test_vllm_api.py")
+        
+        try:
+            results = label_ocrv2_api(
+                model_name_or_path="Qwen2.5-VL-7B-Instruct",  # 使用VLLM服务器上的模型名
+                json_data_file=args.json_data_file,
+                output_dir=args.output_dir
+            )
+        except Exception as e:
+            print(f"❌ API method failed: {e}")
+            print("\nTroubleshooting steps:")
+            print("1. Check if VLLM server is running: ./start_vllm_server.sh")
+            print("2. Test API connection: python test_vllm_api.py")
+            print("3. Check server logs for errors")
+            exit(1)
     elif args.method == "transformers":
         print("Using transformers method...")
         results = label_ocrv2_fallback(
