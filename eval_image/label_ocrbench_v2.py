@@ -4,10 +4,15 @@ OCRBench v2 数据集标注工具
 该脚本用于使用多模态大语言模型对OCRBench v2数据集进行自动标注，生成训练数据格式。
 
 主要功能：
-1. 使用VLLM或transformers加载多模态模型
+1. 使用VLLM、transformers或API加载多模态模型
 2. 对OCRBench v2数据集中的图片和问题进行推理
 3. 生成标准的对话格式训练数据
 4. 复制并组织图片文件
+
+支持的标注方法：
+- vllm: 使用VLLM框架加载模型进行推理（推荐）
+- transformers: 使用transformers库直接加载模型
+- api: 使用预配置的VLLM API服务器（端口58000）
 
 支持的数据文件：
 - OCRBench_v2.json: 原始数据
@@ -20,7 +25,8 @@ OCRBench v2 数据集标注工具
 - labeling_stats.json: 统计信息
 
 使用方法：
-python label_ocrbench_v2.py --model_path /path/to/model --json_data_file OCRBench_v2_new_5.json
+python label_ocrbench_v2.py --method vllm --model_path /path/to/model
+python label_ocrbench_v2.py --method api --json_data_file OCRBench_v2_new_5.json
 """
 try:
     import vllm
@@ -543,8 +549,7 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     return results
 
-def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json", output_dir: str = None, 
-                   api_key: str = None, base_url: str = None):
+def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_data_file: str = "OCRBench_v2.json", output_dir: str = None):
     """
     使用OpenAI API对OCRBench v2数据集进行标注
     
@@ -552,8 +557,6 @@ def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.
         model_name_or_path: 模型名称（用于API调用和输出目录命名）
         json_data_file: OCRBench v2数据文件名
         output_dir: 输出目录，如果为None则使用默认目录
-        api_key: OpenAI API密钥
-        base_url: API基础URL（用于自定义端点）
     """
     import openai
     import base64
@@ -561,11 +564,15 @@ def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.
     
     print(f"Using OpenAI API for OCRBench v2 labeling with model: {model_name_or_path}")
     
-    # 设置OpenAI客户端
-    if api_key:
-        openai.api_key = api_key
-    if base_url:
-        openai.base_url = base_url
+    # 设置OpenAI客户端 - 使用预配置的VLLM服务器
+    api_key = "dummy_key"  # VLLM服务器不需要真实密钥
+    base_url = "http://0.0.0.0:58000/v1"  # VLLM服务器地址
+    
+    openai.api_key = api_key
+    openai.base_url = base_url
+    
+    print(f"Using VLLM API server at: {base_url}")
+    print(f"Model name: {model_name_or_path}")
     
     # 加载数据集
     json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
@@ -713,79 +720,58 @@ def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.
 if __name__ == '__main__':
     import argparse
     
-    parser = argparse.ArgumentParser(description="Label OCRBench v2 dataset using VLLM, transformers, or API")
+    parser = argparse.ArgumentParser(description="Label OCRBench v2 dataset using different methods")
     parser.add_argument("--model_path", type=str, default=QWEN25VL7B, 
-                       help="Path to the model or model name for API")
-    # parser.add_argument("--json_data_file", type=str, default="OCRBench_v2_new_5.json",
+                       help="Path to the model (for vllm and transformers methods)")
     parser.add_argument("--json_data_file", type=str, default="OCRBench_v2.json",
                        help="OCRBench v2 JSON data file name")
     parser.add_argument("--output_dir", type=str, default=None,
                        help="Output directory (if None, uses default)")
-    parser.add_argument("--use_fallback", action="store_true",
-                       help="Force use transformers fallback method")
-    parser.add_argument("--use_api", action="store_true",
-                       help="Use OpenAI API for labeling")
-    parser.add_argument("--api_key", type=str, default=None,
-                       help="OpenAI API key (if not set, uses environment variable)")
-    parser.add_argument("--base_url", type=str, default=None,
-                       help="API base URL for custom endpoints")
-    parser.add_argument("--force_vllm", action="store_true", default=True,
-                       help="Force use VLLM and fail if VLLM fails (default: True)")
-    parser.add_argument("--allow_fallback", action="store_true",
-                       help="Allow automatic fallback to transformers if VLLM fails")
+    parser.add_argument("--method", type=str, default="vllm", choices=["vllm", "transformers", "api"],
+                       help="Method to use for labeling: vllm, transformers, or api")
     
     args = parser.parse_args()
     
-    # 处理force_vllm逻辑
-    if args.allow_fallback:
-        force_vllm = False
-    else:
-        force_vllm = args.force_vllm
-    
     print("Starting OCRBench v2 labeling...")
+    print(f"Method: {args.method}")
     print(f"Model: {args.model_path}")
     print(f"Data file: {args.json_data_file}")
     print(f"Output dir: {args.output_dir or 'auto-generated'}")
     
-    if args.use_api:
-        print("Using OpenAI API method...")
+    if args.method == "api":
+        print("Using OpenAI API method with VLLM server...")
         results = label_ocrv2_api(
-            model_name_or_path=args.model_path,
+            model_name_or_path="Qwen2.5-VL-7B-Instruct",  # 使用VLLM服务器上的模型名
             json_data_file=args.json_data_file,
-            output_dir=args.output_dir,
-            api_key=args.api_key,
-            base_url=args.base_url
+            output_dir=args.output_dir
         )
-    elif args.use_fallback:
-        print("Using transformers fallback method...")
+    elif args.method == "transformers":
+        print("Using transformers method...")
         results = label_ocrv2_fallback(
             model_name_or_path=args.model_path,
             json_data_file=args.json_data_file,
             output_dir=args.output_dir
         )
-    else:
-        print(f"Force VLLM: {force_vllm}")
+    else:  # vllm
+        print("Using VLLM method...")
         results = label_ocrv2(
             model_name_or_path=args.model_path,
             json_data_file=args.json_data_file,
             output_dir=args.output_dir,
-            force_vllm=force_vllm
+            force_vllm=True
         )
     
     print(f"Labeling completed! Generated {len(results)} labeled samples.")
     
     # 示例用法说明：
-    # 默认使用VLLM (推荐):
-    # python label_ocrbench_v2.py --model_path /path/to/model
+    # 使用VLLM方法 (默认):
+    # python label_ocrbench_v2.py --method vllm --model_path /path/to/model
     # 
-    # 允许自动fallback到transformers:
-    # python label_ocrbench_v2.py --model_path /path/to/model --allow_fallback
+    # 使用transformers方法:
+    # python label_ocrbench_v2.py --method transformers --model_path /path/to/model
     # 
-    # 强制使用transformers方法:
-    # python label_ocrbench_v2.py --model_path /path/to/model --use_fallback
-    # 
-    # 使用OpenAI API方法:
-    # python label_ocrbench_v2.py --model_path gpt-4-vision-preview --use_api --api_key your_api_key
+    # 使用API方法:
+    # python label_ocrbench_v2.py --method api
     # 
     # 指定数据文件:
-    # python label_ocrbench_v2.py --model_path /path/to/model --json_data_file OCRBench_v2_new_5.json
+    # python label_ocrbench_v2.py --method vllm --json_data_file OCRBench_v2_new_5.json
