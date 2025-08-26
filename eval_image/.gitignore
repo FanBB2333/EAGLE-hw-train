@@ -3,3 +3,4 @@
 /res_folder
 *.zip
 *.json
+/labeled_data
