@@ -384,6 +384,7 @@ class Qwen2VLVideoTower(nn.Module):
                     frame_embed_list.append(self.visual(pixel_values_videos[i].unsqueeze(0), grid_thw=video_grid_thw[i].unsqueeze(0)))
                 video_embeds = torch.stack(frame_embed_list, dim=0)
         except Exception as e:
+            print("get into exception")
             if pixel_values_videos.dim() == 3:
                 frame_embed_list = []
                 b, n, d = pixel_values_videos.shape
