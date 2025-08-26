@@ -271,27 +271,23 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
 
 def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json", output_dir: str = None):
     """
-    使用transformers作为fallback方法对OCRBench v2数据集进行标注
+    使用transformers直接加载Qwen2.5-VL模型对OCRBench v2数据集进行标注
     """
-    import sys
-    from pathlib import Path
-    
-    # 添加项目根目录到path
-    sys.path.append(str(PROJECT_ROOT))
-    
-    # 使用类似eval_ocrbenchv2.py的方法
-    from eagle.model.builder import load_pretrained_model
-    from eagle.mm_utils import process_images, tokenizer_image_token
-    from eagle.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
-    from eagle.conversation import conv_templates
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
     import torch
     
-    print("Loading model using transformers...")
-    tokenizer, model, image_processor, max_length = load_pretrained_model(
-        model_path=model_name_or_path,
-        model_base=None,
-        model_name="eagle"  # 可以根据需要调整
+    print("Loading Qwen2.5-VL model using transformers...")
+    
+    # 直接加载Qwen2.5-VL模型
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_name_or_path,
+        torch_dtype="auto",
+        device_map="auto"
     )
+    
+    # 加载processor
+    processor = AutoProcessor.from_pretrained(model_name_or_path)
     
     model.eval()
     
@@ -317,7 +313,7 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with transformers")):
+    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with Qwen-VL")):
         # 加载图片
         image_path = os.path.join(img_dir, data_dict['image_path'])
         if not os.path.exists(image_path):
@@ -325,73 +321,54 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
         
         image = Image.open(image_path).convert('RGB')
         
-        # 处理图片
-        image_tensor = process_images(
-            images=[image],
-            image_processor=image_processor,
-            model_cfg=model.config
-        )
-        image_tensor = image_tensor.to(dtype=torch.float16, device=device)
-        
-        # 处理image_grid_thw
-        if hasattr(image_tensor, "image_grid_thw"):
-            image_grid_thw = image_tensor['image_grid_thw']
-            image_tensor = image_tensor['pixel_values']
-        else:
-            image_grid_thw = None
-        
-        # 构建问题
+        # 构建问题 - Qwen-VL格式
         question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
         
-        if DEFAULT_IMAGE_TOKEN not in question:
-            question = DEFAULT_IMAGE_TOKEN + '\n' + question
+        # 使用Qwen2.5-VL的消息格式
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image,
+                    },
+                    {"type": "text", "text": question},
+                ],
+            }
+        ]
         
-        # 构建对话
-        conv = conv_templates["llama3"].copy()  # 可以根据模型调整
-        conv.append_message(conv.roles[0], question)
-        conv.append_message(conv.roles[1], None)
-        prompt_question = conv.get_prompt()
-        
-        # Tokenize
-        input_ids = tokenizer_image_token(
-            prompt_question, 
-            tokenizer, 
-            IMAGE_TOKEN_INDEX, 
-            return_tensors="pt"
+        # 处理输入 - 使用正确的process_vision_info
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
         )
-        
-        pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
-        input_ids = pad_sequence(
-            tokenizer=tokenizer,
-            input_ids=[input_ids], 
-            batch_first=True, 
-            padding_value=pad_token_ids
-        ).to(device)
-        
-        attention_masks = input_ids.ne(pad_token_ids).to(device)
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to(device)
         
         # Generate
         with torch.no_grad():
-            output_ids = model.generate(
-                input_ids,
-                attention_mask=attention_masks,
-                pad_token_id=pad_token_ids,
-                images=image_tensor,
-                do_sample=False,
-                temperature=0,
+            generated_ids = model.generate(
+                **inputs,
                 max_new_tokens=100,
-                use_cache=True,
-                modality='image',
-                image_grid_thw=image_grid_thw
+                do_sample=False,
+                temperature=0.0
             )
         
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        
         # Decode
-        output_text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-        # 提取生成的部分
-        if prompt_question in output_text:
-            prediction = output_text.replace(prompt_question, "").strip()
-        else:
-            prediction = output_text.strip()
+        prediction = processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )[0].strip()
         
         # 复制图片
         image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
