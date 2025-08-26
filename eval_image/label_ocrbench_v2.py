@@ -28,7 +28,7 @@ except Exception as e:
     print(f"Warning: vllm import failed: {e}. VLLM-based labeling will not work.")
 import json
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6"
 import shutil
 import torch
 import sys
@@ -116,7 +116,7 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
             "tensor_parallel_size": gpu_count,
             "trust_remote_code": True,
             "max_model_len": 1024,  # 降低模型长度减少内存使用
-            "gpu_memory_utilization": 0.80,  # 降低GPU内存使用率
+            "gpu_memory_utilization": 0.70,  # 降低GPU内存使用率
             "swap_space": 2,  # 减少swap空间
             "disable_custom_all_reduce": True,  # 禁用自定义all_reduce，避免通信问题
         }
@@ -198,13 +198,16 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
             image = Image.open(image_path).convert('RGB')
             print(f"Preparing input {i+1}/{len(json_data)}: {data_dict['image_path']}, size: {image.size}")
             
-            # 对于VLLM，先尝试简单的文本prompt格式
-            # 如果VLLM版本不支持图像，可能需要fallback到transformers
-            text_prompt = f"<image>\n{question_with_prompt}"
+            vllm_prompt = f"<image>\n{question_with_prompt}\n"
+            
+            # 构建VLLM官方格式的输入
+            vllm_input = {
+                "prompt": vllm_prompt,
+                "multi_modal_data": {"image": image},
+            }
             
             inputs.append({
-                "prompt": text_prompt,
-                "image": image,  # 保留图像引用
+                "vllm_input": vllm_input,
                 "data_index": i
             })
             valid_indices.append(i)
@@ -217,7 +220,12 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
     
     # 批量推理
     try:
-        print("Starting VLLM multimodal inference...")
+        print("Starting VLLM multimodal inference using official format...")
+        print("Example input format:")
+        if inputs:
+            example_input = inputs[0]["vllm_input"]
+            print(f"  Prompt: {example_input['prompt'][:100]}...")
+            print(f"  Image: PIL.Image {example_input['multi_modal_data']['image'].size}")
         
         # 分批处理以避免内存问题，提高GPU利用率
         if gpu_count >= 4:
@@ -240,23 +248,11 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 
-                # 尝试使用VLLM的标准generate方法
-                batch_prompts = [inp["prompt"] for inp in batch_inputs]
+                # 使用VLLM官方的多模态批量推理格式
+                batch_vllm_inputs = [inp["vllm_input"] for inp in batch_inputs]
                 
-                # 检查VLLM是否支持图像参数
-                try:
-                    # 尝试包含图像的生成
-                    batch_outputs = llm.generate(
-                        prompts=batch_prompts,
-                        sampling_params=sampling_params,
-                        # 如果支持图像，添加图像参数
-                        images=[inp["image"] for inp in batch_inputs]
-                    )
-                except TypeError as te:
-                    # 如果不支持图像参数，只使用文本
-                    print(f"VLLM doesn't support image parameter, using text-only: {te}")
-                    batch_outputs = llm.generate(batch_prompts, sampling_params)
-                
+                # VLLM官方批量推理方法
+                batch_outputs = llm.generate(batch_vllm_inputs, sampling_params)
                 all_outputs.extend(batch_outputs)
                 
             except Exception as batch_error:
@@ -266,7 +262,8 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
                 # 如果批处理失败，尝试逐个处理
                 for inp in batch_inputs:
                     try:
-                        single_output = llm.generate([inp["prompt"]], sampling_params)
+                        # 使用VLLM官方的单个输入格式
+                        single_output = llm.generate([inp["vllm_input"]], sampling_params)
                         all_outputs.extend(single_output)
                     except Exception as single_error:
                         print(f"Error processing single item: {single_error}")
