@@ -543,13 +543,29 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     return results
 
-def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json", output_dir: str = None):
+def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json", output_dir: str = None, 
+                   api_key: str = None, base_url: str = None):
     """
     使用OpenAI API对OCRBench v2数据集进行标注
+    
+    Args:
+        model_name_or_path: 模型名称（用于API调用和输出目录命名）
+        json_data_file: OCRBench v2数据文件名
+        output_dir: 输出目录，如果为None则使用默认目录
+        api_key: OpenAI API密钥
+        base_url: API基础URL（用于自定义端点）
     """
     import openai
+    import base64
+    from io import BytesIO
     
-    print("Using OpenAI API for labeling...")
+    print(f"Using OpenAI API for OCRBench v2 labeling with model: {model_name_or_path}")
+    
+    # 设置OpenAI客户端
+    if api_key:
+        openai.api_key = api_key
+    if base_url:
+        openai.base_url = base_url
     
     # 加载数据集
     json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
@@ -557,6 +573,8 @@ def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.
         json_data = json.load(f)
     
     img_dir = str(PROJECT_ROOT / 'eval_image/OCRBench_v2')
+    
+    print(f"Loaded {len(json_data)} samples from {json_data_file}")
     
     # 准备输出目录
     if output_dir is None:
@@ -568,69 +586,136 @@ def label_ocrv2_api(model_name_or_path: str, json_data_file: str = "OCRBench_v2.
     images_output_dir = os.path.join(output_dir, 'images')
     os.makedirs(images_output_dir, exist_ok=True)
     
-    print(f"Processing {len(json_data)} samples...")
+    print(f"Output directory: {output_dir}")
+    
+    def encode_image_base64(image_path):
+        """将图片编码为base64格式"""
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+    
+    # 进行推理
     results = []
     
-    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with OpenAI API")):
-        # 构建问题
-        question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
-        
+    print(f"Processing {len(json_data)} samples using API...")
+    
+    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with API")):
         # 检查图片是否存在
         image_path = os.path.join(img_dir, data_dict['image_path'])
         if not os.path.exists(image_path):
+            print(f"Warning: Image not found: {image_path}")
             continue
         
-        # 使用OpenAI的多模态消息格式
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": f"file://{image_path}",
-                    },
-                    {"type": "text", "text": question},
-                ],
-            }
-        ]
-        
         try:
+            # 加载图片
+            image = Image.open(image_path).convert('RGB')
+            print(f"Processing image {i+1}/{len(json_data)}: {data_dict['image_path']}, size: {image.size}")
+            
+            # 构建问题
+            question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
+            
+            # 将图片编码为base64
+            base64_image = encode_image_base64(image_path)
+            
+            # 构建API请求消息
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": question
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            # 调用API
             response = openai.chat.completions.create(
                 model=model_name_or_path,
                 messages=messages,
-                temperature=0.0,
                 max_tokens=50,
+                temperature=0.0
             )
-            prediction = response.choices[0].message['content'].strip()
+            
+            # 提取预测结果
+            prediction = response.choices[0].message.content.strip() if response.choices else ""
+            
+            if not prediction:
+                print(f"Warning: Empty response for sample {i}")
+                prediction = ""
+            
+            # 复制图片到输出目录
+            image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
+            image_output_path = os.path.join(images_output_dir, image_filename)
+            shutil.copy2(image_path, image_output_path)
+            
+            # 构建结果项
+            result_item = {
+                "id": str(data_dict['id']),
+                "conversations": [
+                    {
+                        "from": "human",
+                        "value": data_dict['question'] + "\n<image>"
+                    },
+                    {
+                        "from": "gpt", 
+                        "value": prediction
+                    }
+                ],
+                "image_abs": image_output_path,
+                "image": f"images/{image_filename}",
+                "original_question": data_dict['question'],
+                "original_answers": data_dict.get('answers', []),
+                "dataset_name": data_dict.get('dataset_name', ''),
+                "type": data_dict.get('type', ''),
+                "image_path": data_dict['image_path']
+            }
+            
+            results.append(result_item)
+            
         except Exception as e:
-            print(f"Error calling OpenAI API for sample {i}: {e}")
+            print(f"Error processing sample {i}: {e}")
             continue
-
-        # 保存结果
-        result_item = {
-            "image_path": data_dict['image_path'],
-            "question": data_dict['question'],
-            "prediction": prediction
-        }
-        results.append(result_item)
-
+    
     # 保存结果
     output_json_path = os.path.join(output_dir, 'labeled_ocrbench_v2.json')
     with open(output_json_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-
-    print(f"Labeled {len(results)} samples using OpenAI API")
+    
+    print(f"Labeled {len(results)} samples using API method")
     print(f"Results saved to: {output_json_path}")
-
+    print(f"Images saved to: {images_output_dir}")
+    
+    # 保存统计信息
+    stats = {
+        "total_samples": len(json_data),
+        "labeled_samples": len(results),
+        "model_name": model_name_or_path,
+        "json_data_file": json_data_file,
+        "timestamp": datetime.now().isoformat(),
+        "method": "api"
+    }
+    
+    stats_path = os.path.join(output_dir, 'labeling_stats.json')
+    with open(stats_path, 'w', encoding='utf-8') as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+    
     return results
+    
 
 
 if __name__ == '__main__':
     import argparse
     
-    parser = argparse.ArgumentParser(description="Label OCRBench v2 dataset using VLLM or transformers")
+    parser = argparse.ArgumentParser(description="Label OCRBench v2 dataset using VLLM, transformers, or API")
     parser.add_argument("--model_path", type=str, default=QWEN25VL7B, 
-                       help="Path to the model")
+                       help="Path to the model or model name for API")
     # parser.add_argument("--json_data_file", type=str, default="OCRBench_v2_new_5.json",
     parser.add_argument("--json_data_file", type=str, default="OCRBench_v2.json",
                        help="OCRBench v2 JSON data file name")
@@ -638,6 +723,12 @@ if __name__ == '__main__':
                        help="Output directory (if None, uses default)")
     parser.add_argument("--use_fallback", action="store_true",
                        help="Force use transformers fallback method")
+    parser.add_argument("--use_api", action="store_true",
+                       help="Use OpenAI API for labeling")
+    parser.add_argument("--api_key", type=str, default=None,
+                       help="OpenAI API key (if not set, uses environment variable)")
+    parser.add_argument("--base_url", type=str, default=None,
+                       help="API base URL for custom endpoints")
     parser.add_argument("--force_vllm", action="store_true", default=True,
                        help="Force use VLLM and fail if VLLM fails (default: True)")
     parser.add_argument("--allow_fallback", action="store_true",
@@ -655,9 +746,17 @@ if __name__ == '__main__':
     print(f"Model: {args.model_path}")
     print(f"Data file: {args.json_data_file}")
     print(f"Output dir: {args.output_dir or 'auto-generated'}")
-    print(f"Force VLLM: {force_vllm}")
     
-    if args.use_fallback:
+    if args.use_api:
+        print("Using OpenAI API method...")
+        results = label_ocrv2_api(
+            model_name_or_path=args.model_path,
+            json_data_file=args.json_data_file,
+            output_dir=args.output_dir,
+            api_key=args.api_key,
+            base_url=args.base_url
+        )
+    elif args.use_fallback:
         print("Using transformers fallback method...")
         results = label_ocrv2_fallback(
             model_name_or_path=args.model_path,
@@ -665,6 +764,7 @@ if __name__ == '__main__':
             output_dir=args.output_dir
         )
     else:
+        print(f"Force VLLM: {force_vllm}")
         results = label_ocrv2(
             model_name_or_path=args.model_path,
             json_data_file=args.json_data_file,
@@ -683,6 +783,9 @@ if __name__ == '__main__':
     # 
     # 强制使用transformers方法:
     # python label_ocrbench_v2.py --model_path /path/to/model --use_fallback
+    # 
+    # 使用OpenAI API方法:
+    # python label_ocrbench_v2.py --model_path gpt-4-vision-preview --use_api --api_key your_api_key
     # 
     # 指定数据文件:
     # python label_ocrbench_v2.py --model_path /path/to/model --json_data_file OCRBench_v2_new_5.json
