@@ -22,8 +22,10 @@ OCRBench v2 数据集标注工具
 使用方法：
 python label_ocrbench_v2.py --model_path /path/to/model --json_data_file OCRBench_v2_new_5.json
 """
-
-import vllm
+try:
+    import vllm
+except Exception as e:
+    print(f"Warning: vllm import failed: {e}. VLLM-based labeling will not work.")
 import json
 import os
 import shutil
@@ -277,168 +279,158 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     # 添加项目根目录到path
     sys.path.append(str(PROJECT_ROOT))
     
-    try:
-        # 使用类似eval_ocrbenchv2.py的方法
-        from eagle.model.builder import load_pretrained_model
-        from eagle.mm_utils import process_images, tokenizer_image_token
-        from eagle.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
-        from eagle.conversation import conv_templates
-        import torch
+    # 使用类似eval_ocrbenchv2.py的方法
+    from eagle.model.builder import load_pretrained_model
+    from eagle.mm_utils import process_images, tokenizer_image_token
+    from eagle.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+    from eagle.conversation import conv_templates
+    import torch
+    
+    print("Loading model using transformers...")
+    tokenizer, model, image_processor, max_length = load_pretrained_model(
+        model_path=model_name_or_path,
+        model_base=None,
+        model_name="eagle"  # 可以根据需要调整
+    )
+    
+    model.eval()
+    
+    # 加载数据集
+    json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
+    with open(json_data_path, 'r', encoding='utf-8') as f:
+        json_data = json.load(f)
+    
+    img_dir = str(PROJECT_ROOT / 'eval_image/OCRBench_v2')
+    
+    # 准备输出目录
+    if output_dir is None:
+        model_name = get_model_name(model_name_or_path)
+        current_date = datetime.now().strftime("%m%d")
+        output_dir = str(PROJECT_ROOT / f'eval_image/labeled_data/{model_name}_{current_date}')
+    
+    os.makedirs(output_dir, exist_ok=True)
+    images_output_dir = os.path.join(output_dir, 'images')
+    os.makedirs(images_output_dir, exist_ok=True)
+    
+    print(f"Processing {len(json_data)} samples...")
+    results = []
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with transformers")):
+        # 加载图片
+        image_path = os.path.join(img_dir, data_dict['image_path'])
+        if not os.path.exists(image_path):
+            continue
         
-        print("Loading model using transformers...")
-        tokenizer, model, image_processor, max_length = load_pretrained_model(
-            model_path=model_name_or_path,
-            model_base=None,
-            model_name="eagle"  # 可以根据需要调整
+        image = Image.open(image_path).convert('RGB')
+        
+        # 处理图片
+        image_tensor = process_images(
+            images=[image],
+            image_processor=image_processor,
+            model_cfg=model.config
+        )
+        image_tensor = image_tensor.to(dtype=torch.float16, device=device)
+        
+        # 处理image_grid_thw
+        if hasattr(image_tensor, "image_grid_thw"):
+            image_grid_thw = image_tensor['image_grid_thw']
+            image_tensor = image_tensor['pixel_values']
+        else:
+            image_grid_thw = None
+        
+        # 构建问题
+        question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
+        
+        if DEFAULT_IMAGE_TOKEN not in question:
+            question = DEFAULT_IMAGE_TOKEN + '\n' + question
+        
+        # 构建对话
+        conv = conv_templates["llama3"].copy()  # 可以根据模型调整
+        conv.append_message(conv.roles[0], question)
+        conv.append_message(conv.roles[1], None)
+        prompt_question = conv.get_prompt()
+        
+        # Tokenize
+        input_ids = tokenizer_image_token(
+            prompt_question, 
+            tokenizer, 
+            IMAGE_TOKEN_INDEX, 
+            return_tensors="pt"
         )
         
-        model.eval()
+        pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+        input_ids = pad_sequence(
+            tokenizer=tokenizer,
+            input_ids=[input_ids], 
+            batch_first=True, 
+            padding_value=pad_token_ids
+        ).to(device)
         
-        # 加载数据集
-        json_data_path = os.path.join(str(PROJECT_ROOT / 'eval_image/OCRBench_v2'), json_data_file)
-        with open(json_data_path, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
+        attention_masks = input_ids.ne(pad_token_ids).to(device)
         
-        img_dir = str(PROJECT_ROOT / 'eval_image/OCRBench_v2')
+        # Generate
+        with torch.no_grad():
+            output_ids = model.generate(
+                input_ids,
+                attention_mask=attention_masks,
+                pad_token_id=pad_token_ids,
+                images=image_tensor,
+                do_sample=False,
+                temperature=0,
+                max_new_tokens=100,
+                use_cache=True,
+                modality='image',
+                image_grid_thw=image_grid_thw
+            )
         
-        # 准备输出目录
-        if output_dir is None:
-            model_name = get_model_name(model_name_or_path)
-            current_date = datetime.now().strftime("%m%d")
-            output_dir = str(PROJECT_ROOT / f'eval_image/labeled_data/{model_name}_{current_date}')
+        # Decode
+        output_text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+        # 提取生成的部分
+        if prompt_question in output_text:
+            prediction = output_text.replace(prompt_question, "").strip()
+        else:
+            prediction = output_text.strip()
         
-        os.makedirs(output_dir, exist_ok=True)
-        images_output_dir = os.path.join(output_dir, 'images')
-        os.makedirs(images_output_dir, exist_ok=True)
+        # 复制图片
+        image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
+        image_output_path = os.path.join(images_output_dir, image_filename)
+        shutil.copy2(image_path, image_output_path)
         
-        print(f"Processing {len(json_data)} samples...")
-        results = []
-        
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        for i, data_dict in enumerate(tqdm(json_data, desc="Labeling with transformers")):
-            try:
-                # 加载图片
-                image_path = os.path.join(img_dir, data_dict['image_path'])
-                if not os.path.exists(image_path):
-                    continue
-                
-                image = Image.open(image_path).convert('RGB')
-                
-                # 处理图片
-                image_tensor = process_images(
-                    images=[image],
-                    image_processor=image_processor,
-                    model_cfg=model.config
-                )
-                image_tensor = image_tensor.to(dtype=torch.float16, device=device)
-                
-                # 处理image_grid_thw
-                if hasattr(image_tensor, "image_grid_thw"):
-                    image_grid_thw = image_tensor['image_grid_thw']
-                    image_tensor = image_tensor['pixel_values']
-                else:
-                    image_grid_thw = None
-                
-                # 构建问题
-                question = data_dict['question'] + '\nAnswer the question using a single word or phrase.'
-                
-                if DEFAULT_IMAGE_TOKEN not in question:
-                    question = DEFAULT_IMAGE_TOKEN + '\n' + question
-                
-                # 构建对话
-                conv = conv_templates["llama3"].copy()  # 可以根据模型调整
-                conv.append_message(conv.roles[0], question)
-                conv.append_message(conv.roles[1], None)
-                prompt_question = conv.get_prompt()
-                
-                # Tokenize
-                input_ids = tokenizer_image_token(
-                    prompt_question, 
-                    tokenizer, 
-                    IMAGE_TOKEN_INDEX, 
-                    return_tensors="pt"
-                )
-                
-                pad_token_ids = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
-                input_ids = pad_sequence(
-                    tokenizer=tokenizer,
-                    input_ids=[input_ids], 
-                    batch_first=True, 
-                    padding_value=pad_token_ids
-                ).to(device)
-                
-                attention_masks = input_ids.ne(pad_token_ids).to(device)
-                
-                # Generate
-                with torch.no_grad():
-                    output_ids = model.generate(
-                        input_ids,
-                        attention_mask=attention_masks,
-                        pad_token_id=pad_token_ids,
-                        images=image_tensor,
-                        do_sample=False,
-                        temperature=0,
-                        max_new_tokens=100,
-                        use_cache=True,
-                        modality='image',
-                        image_grid_thw=image_grid_thw
-                    )
-                
-                # Decode
-                output_text = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-                # 提取生成的部分
-                if prompt_question in output_text:
-                    prediction = output_text.replace(prompt_question, "").strip()
-                else:
-                    prediction = output_text.strip()
-                
-                # 复制图片
-                image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
-                image_output_path = os.path.join(images_output_dir, image_filename)
-                shutil.copy2(image_path, image_output_path)
-                
-                # 构建结果项
-                result_item = {
-                    "id": str(data_dict['id']),
-                    "conversations": [
-                        {
-                            "from": "human",
-                            "value": data_dict['question'] + "\n<image>"
-                        },
-                        {
-                            "from": "gpt", 
-                            "value": prediction
-                        }
-                    ],
-                    "image_abs": image_output_path,
-                    "image": f"images/{image_filename}",
-                    "original_question": data_dict['question'],
-                    "original_answers": data_dict.get('answers', []),
-                    "dataset_name": data_dict.get('dataset_name', ''),
-                    "type": data_dict.get('type', ''),
-                    "image_path": data_dict['image_path']
+        # 构建结果项
+        result_item = {
+            "id": str(data_dict['id']),
+            "conversations": [
+                {
+                    "from": "human",
+                    "value": data_dict['question'] + "\n<image>"
+                },
+                {
+                    "from": "gpt", 
+                    "value": prediction
                 }
-                
-                results.append(result_item)
-                
-            except Exception as e:
-                print(f"Error processing sample {i}: {e}")
-                continue
+            ],
+            "image_abs": image_output_path,
+            "image": f"images/{image_filename}",
+            "original_question": data_dict['question'],
+            "original_answers": data_dict.get('answers', []),
+            "dataset_name": data_dict.get('dataset_name', ''),
+            "type": data_dict.get('type', ''),
+            "image_path": data_dict['image_path']
+        }
         
-        # 保存结果
-        output_json_path = os.path.join(output_dir, 'labeled_ocrbench_v2.json')
-        with open(output_json_path, 'w', encoding='utf-8') as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
-        
-        print(f"Labeled {len(results)} samples using fallback method")
-        print(f"Results saved to: {output_json_path}")
-        
-        return results
-        
-    except Exception as e:
-        print(f"Error in fallback method: {e}")
-        return []
+        results.append(result_item)
+    
+    # 保存结果
+    output_json_path = os.path.join(output_dir, 'labeled_ocrbench_v2.json')
+    with open(output_json_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    print(f"Labeled {len(results)} samples using fallback method")
+    print(f"Results saved to: {output_json_path}")
+    
+    return results
 
 if __name__ == '__main__':
     import argparse
