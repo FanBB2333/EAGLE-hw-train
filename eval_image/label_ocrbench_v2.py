@@ -113,10 +113,10 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
         # 更保守的VLLM参数设置，避免内存问题
         vllm_kwargs = {
             "model": model_name_or_path,
-            "tensor_parallel_size": gpu_count,
+            "tensor_parallel_size": min(gpu_count, 4) if gpu_count > 1 else 1,  # 先限制为2张GPU测试
             "trust_remote_code": True,
-            "max_model_len": 3072,  # 降低模型长度减少内存使用
-            "gpu_memory_utilization": 0.95,  # 降低GPU内存使用率
+            "max_model_len": 1024,  # 降低模型长度减少内存使用
+            "gpu_memory_utilization": 0.75,  # 降低GPU内存使用率
             "swap_space": 2,  # 减少swap空间
             "disable_custom_all_reduce": True,  # 禁用自定义all_reduce，避免通信问题
         }
