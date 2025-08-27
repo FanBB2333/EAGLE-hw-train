@@ -495,7 +495,7 @@ def train(attn_implementation=None):
 
     if model_args.version != 'plain':
         model.train()
-        model.requires_grad_(True)
+        # model.requires_grad_(True)
         max_layer_num = -1
         for name, _ in model.get_model().vision_tower.named_parameters():
             if 'vision_model.encoder.layers.' in name:
@@ -506,7 +506,8 @@ def train(attn_implementation=None):
 
         # 第一步：冻结除vision_tower
         for name, param in model.named_parameters():
-            if "vision_tower" not in name:
+            if "vision_tower" not in name and "mm_projector" not in name:
+            # old: if "vision_tower" not in name:
                 param.requires_grad = False
             else:
                 param.requires_grad = True

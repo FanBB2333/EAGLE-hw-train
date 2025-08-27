@@ -522,13 +522,12 @@ class Qwen2VLTower(nn.Module):
         return image_embeds
 
     def forward(self, images: torch.FloatTensor, image_grid_thw: Optional[torch.LongTensor] = None):
-        with torch.no_grad():
-            if self.modality == 'image':
-                image_features = self.get_image_features(images, image_grid_thw=image_grid_thw)
-            elif self.modality == 'video':
-                image_features = self.get_video_features(images, video_grid_thw=image_grid_thw)
-            else:
-                raise ValueError(f"Unsupported modality: {self.modality}")
+        if self.modality == 'image':
+            image_features = self.get_image_features(images, image_grid_thw=image_grid_thw)
+        elif self.modality == 'video':
+            image_features = self.get_video_features(images, video_grid_thw=image_grid_thw)
+        else:
+            raise ValueError(f"Unsupported modality: {self.modality}")
 
         # 可选：进一步选择 patch/cls 等特征（视具体模型输出格式而定）
         # if self.select_feature == 'patch':

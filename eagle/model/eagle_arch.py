@@ -403,6 +403,7 @@ class EagleMetaForCausalLM(ABC):
             image_features, mlp_balanced_loss, mlp_router_z_loss = self.get_model().mm_projector(image_features)
             return image_features, mlp_balanced_loss, mlp_router_z_loss
         else:
+            # print(f"mm_projector: {type(self.get_model().mm_projector)}, {self.get_model().mm_projector}")
             image_features = self.get_model().mm_projector(image_features)
             return image_features
 
