@@ -47,7 +47,7 @@ from .multimodal_encoder.builder import build_video_tower
 from .multimodal_projector.builder import build_video_projector
 from .multimodal_encoder.builder import build_3d_tower
 from .multimodal_projector.builder import build_3d_projector
-from .multimodal_encoder.processing_3d_video import Video3DProcessor
+# from .multimodal_encoder.processing_3d_video import Video3DProcessor
 import logging
 # END
 

@@ -26,8 +26,8 @@ from transformers import CLIPVisionModel, CLIPImageProcessor, CLIPVisionConfig, 
 from transformers import Qwen2AudioForConditionalGeneration, AutoProcessor, Qwen2AudioConfig
 from eagle.model.multimodal_encoder.languagebind import LanguageBindAudio, LanguageBindAudioTokenizer, LanguageBindAudioProcessor
 from eagle.model.multimodal_encoder.languagebind import LanguageBindVideo, LanguageBindVideoTokenizer, LanguageBindVideoProcessor
-from eagle.model.multimodal_encoder.pointbert.point_encoder import PointTransformer
-from eagle.model.multimodal_encoder.pointbert.config import PointTransformerConfig
+# from eagle.model.multimodal_encoder.pointbert.point_encoder import PointTransformer
+# from eagle.model.multimodal_encoder.pointbert.config import PointTransformerConfig
 
 class CLIPVisionTower(nn.Module):
     def __init__(self, vision_tower, args, delay_load=False):
