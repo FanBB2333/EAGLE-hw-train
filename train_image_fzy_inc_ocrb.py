@@ -459,10 +459,10 @@ def train(attn_implementation=None):
 
     # END
     tensors = {}
-
+    merged_dir = "/home1/hxl/disk2/Backup/EAGLE/qbs/Eagle_LanguageBind/checkpoints/merged_model/0.98_0.02/image"
     safetensor_paths = [
-        "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2/model-00001-of-00002.safetensors",
-        "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-epoch2/model-00002-of-00002.safetensors",
+        os.path.join(merged_dir, "model-00001-of-00002.safetensors"),
+        os.path.join(merged_dir, "model-00002-of-00002.safetensors"),
     ]
     
     for safetensor_path in safetensor_paths:
@@ -474,7 +474,7 @@ def train(attn_implementation=None):
     
     # 替换模型参数
     for name, param in model.named_parameters():
-        if "vision_tower" not in name and "mm_projector" not in name:
+        if True or "vision_tower" not in name and "mm_projector" not in name:
             if name in tensors.keys():
                 if tensors[name].shape == param.data.shape:
                     original_requires_grad = copy.deepcopy(param.requires_grad)  # 保存原始的requires_grad状态
