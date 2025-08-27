@@ -7,7 +7,7 @@ vllm serve /home/l1ght/models/Qwen/Qwen2.5-VL-7B-Instruct \
   --host 0.0.0.0 \
   --port 58000 \
   --max-model-len 4096 \
-  --gpu-memory-utilization 0.80 \
+  --gpu-memory-utilization 0.95 \
   --tensor-parallel-size 1 \
   --enforce-eager \
   --served-model-name Qwen2.5-VL-7B-Instruct

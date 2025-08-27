@@ -4,3 +4,4 @@
 *.zip
 *.json
 /labeled_data
+*.tar.gz
