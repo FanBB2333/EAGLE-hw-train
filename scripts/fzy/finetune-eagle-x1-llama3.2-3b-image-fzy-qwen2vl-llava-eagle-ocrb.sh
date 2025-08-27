@@ -38,7 +38,7 @@ CUDA_VISIBLE_DEVICES='0' python -m torch.distributed.run \
     --output_dir ./checkpoints/$NAME \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 3 \
+    --gradient_accumulation_steps 4 \
     --save_strategy "epoch" \
     --learning_rate 2e-5 \
     --weight_decay 0. \
@@ -48,7 +48,8 @@ CUDA_VISIBLE_DEVICES='0' python -m torch.distributed.run \
     --tf32 True \
     --model_max_length 3072 \
     --gradient_checkpointing True \
-    --dataloader_num_workers 3 \
+    --dataloader_num_workers 6 \
+    --dataloader_prefetch_factor 3 \
     --lazy_preprocess True \
     --report_to tensorboard \
     --num_train_epochs 1 \
