@@ -494,6 +494,8 @@ def train(attn_implementation=None):
             param.requires_grad = True
 
     if model_args.version != 'plain':
+        model.train()
+        model.requires_grad_(True)
         max_layer_num = -1
         for name, _ in model.get_model().vision_tower.named_parameters():
             if 'vision_model.encoder.layers.' in name:
@@ -502,11 +504,13 @@ def train(attn_implementation=None):
                 max_layer_num = max(max_layer_num, layer_num)
         print(max_layer_num)
 
-        # 第一步：冻结除vision_tower和mm_projector之外的所有参数
+        # 第一步：冻结除vision_tower
         for name, param in model.named_parameters():
             if "vision_tower" not in name:
                 param.requires_grad = False
-        
+            else:
+                param.requires_grad = True
+
         # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）
         for name, param in model.get_model().vision_tower.named_parameters():
             if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
@@ -538,8 +542,8 @@ def train(attn_implementation=None):
         #         param.requires_grad = False
 
         # pr_llm
-        for name, param in model.get_model().vision_tower.named_parameters():
-            param.requires_grad = False
+        # for name, param in model.get_model().vision_tower.named_parameters():
+        #     param.requires_grad = False
 
     print("require grad")
     for name, param in model.named_parameters():
