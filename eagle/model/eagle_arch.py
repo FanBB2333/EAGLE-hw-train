@@ -33,6 +33,7 @@ from abc import ABC, abstractmethod
 
 import torch
 import torch.nn as nn
+import os
 
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector
@@ -219,7 +220,11 @@ class EagleMetaModel:
                 p.requires_grad = True
 
         if pretrain_mm_mlp_adapter is not None and not model_args.evaluation:
-            mm_projector_weights = torch.load(pretrain_mm_mlp_adapter, map_location='cpu')
+            if os.path.exists(pretrain_mm_mlp_adapter):
+                mm_projector_weights = torch.load(pretrain_mm_mlp_adapter, map_location='cpu')
+            else:
+                print(f"pretrain_mm_mlp_adapter path not exists: {pretrain_mm_mlp_adapter}, skip loading")
+                return
             def get_w(weights, keyword):
                 return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
 

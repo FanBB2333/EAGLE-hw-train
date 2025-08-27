@@ -82,6 +82,7 @@ class ModelArguments:
     vision_tower: Optional[str] = field(default=None)
     mm_vision_select_layer: Optional[int] = field(default=-1)   # default to the last layer
     
+    evaluation: bool = False
     # BEGIN
     # Copied from CuMo
     num_experts: Optional[int] = field(default=1) 
@@ -102,7 +103,6 @@ class ModelArguments:
     mm_audio_projector_type: Optional[str] = field(default='linear')
     #END
     
-
     pretrain_mm_mlp_adapter: Optional[str] = field(default=None)
     mm_projector_type: Optional[str] = field(default='linear')
     mm_use_im_start_end: bool = field(default=False)
