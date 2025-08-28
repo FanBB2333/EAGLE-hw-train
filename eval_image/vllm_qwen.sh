@@ -5,7 +5,7 @@ export VLLM_USE_MODELSCOPE=False   # 默认从 HuggingFace Hub；若用 ModelSco
 
 vllm serve /home/l1ght/models/Qwen/Qwen2.5-VL-7B-Instruct \
   --host 0.0.0.0 \
-  --port 58000 \
+  --port 58007 \
   --max-model-len 4096 \
   --gpu-memory-utilization 0.95 \
   --tensor-parallel-size 1 \

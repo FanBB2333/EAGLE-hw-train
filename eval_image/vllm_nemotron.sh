@@ -2,6 +2,7 @@
 
 export CUDA_VISIBLE_DEVICES=0     # 单卡示例；多卡改成 0,1,2,3 等
 export VLLM_USE_MODELSCOPE=False   # 默认从 HuggingFace Hub；若用 ModelScope 改成 True
+export VLLM_USE_V1=0
 
 vllm serve ~/models/nvidia/Llama-3.1-Nemotron-Nano-VL-8B-V1 \
   --host 0.0.0.0 \
