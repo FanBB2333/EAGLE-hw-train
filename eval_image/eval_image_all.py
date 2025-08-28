@@ -45,7 +45,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run all image evaluation tasks")
     parser.add_argument(
         "--model_path", 
-        default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
+        # default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
+        default="./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B-en-pr",
         help="Path to the pretrained model"
     )
     parser.add_argument(
@@ -56,12 +57,12 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", 
-        default="all",
+        default="ocrbenchv2",
         help="Datasets to evaluate. Options: 'all', 'docvqa', 'textvqa', 'chartqa', 'mme', 'ocrbenchv2', 'mmlu', or comma-separated list (e.g., 'textvqa,docvqa'). For docvqa/textvqa/chartqa, you can specify individual datasets or combinations."
     )
     parser.add_argument(
         "--gpus", 
-        default="4",
+        default="0",
         help="Comma-separated list of GPU IDs to use (e.g., '0,1,2'). Default: '0'"
     )
     parser.add_argument(

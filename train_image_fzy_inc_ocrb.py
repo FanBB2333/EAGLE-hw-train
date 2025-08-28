@@ -506,8 +506,8 @@ def train(attn_implementation=None):
 
         # 第一步：冻结除vision_tower
         for name, param in model.named_parameters():
-            if "vision_tower" not in name and "mm_projector" not in name:
-            # old: if "vision_tower" not in name:
+            # if "vision_tower" not in name and "mm_projector" not in name:
+            if "vision_tower" not in name:
                 param.requires_grad = False
             else:
                 param.requires_grad = True
