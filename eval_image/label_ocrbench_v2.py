@@ -305,7 +305,12 @@ def label_ocrv2(model_name_or_path: str, json_data_file: str = "OCRBench_v2.json
             image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
             image_output_path = os.path.join(images_output_dir, image_filename)
             image_source_path = os.path.join(img_dir, data_dict['image_path'])
-            shutil.copy2(image_source_path, image_output_path)
+            
+            # 检查目标文件是否已存在，如果不存在则复制
+            if not os.path.exists(image_output_path):
+                shutil.copy2(image_source_path, image_output_path)
+            else:
+                print(f"Image already exists, skipping copy: {image_filename}")
             
             # 构建结果项
             result_item = {
@@ -513,7 +518,12 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
         # 复制图片
         image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
         image_output_path = os.path.join(images_output_dir, image_filename)
-        shutil.copy2(image_path, image_output_path)
+        
+        # 检查目标文件是否已存在，如果不存在则复制
+        if not os.path.exists(image_output_path):
+            shutil.copy2(image_path, image_output_path)
+        else:
+            print(f"Image already exists, skipping copy: {image_filename}")
         
         # 构建结果项
         result_item = {
@@ -697,7 +707,12 @@ def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_dat
             # 复制图片到输出目录
             image_filename = f"{data_dict['id']}_{os.path.basename(data_dict['image_path'])}"
             image_output_path = os.path.join(images_output_dir, image_filename)
-            shutil.copy2(image_path, image_output_path)
+            
+            # 检查目标文件是否已存在，如果不存在则复制
+            if not os.path.exists(image_output_path):
+                shutil.copy2(image_path, image_output_path)
+            else:
+                print(f"Image already exists, skipping copy: {image_filename}")
             
             # 构建结果项
             result_item = {
