@@ -10,5 +10,7 @@ vllm serve ~/models/nvidia/Llama-3.1-Nemotron-Nano-VL-8B-V1 \
   --gpu-memory-utilization 0.95 \
   --tensor-parallel-size 1 \
   --enforce-eager \
-  --served-model-name Llama-3.1-Nemotron-Nano-VL-8B-V1
+  --served-model-name Llama-3.1-Nemotron-Nano-VL-8B-V1 \
+  --trust_remote_code \
+  # 允许仓库中的自定义代码运行（修复: 请传入 trust_remote_code=True），
   # 可选：如需更高并发可加 --max-num-seqs 128
