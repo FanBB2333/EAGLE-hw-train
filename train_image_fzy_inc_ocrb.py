@@ -109,6 +109,9 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    
+    # Training strategy control: "encoder" or "encoder_projector"
+    train_strategy: Optional[str] = field(default="encoder", metadata={"help": "Choose training strategy: 'encoder' (only vision tower) or 'encoder_projector' (vision tower + mm_projector)"})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -496,6 +499,7 @@ def train(attn_implementation=None):
     if model_args.version != 'plain':
         model.train()
         # model.requires_grad_(True)
+        print(f"Training strategy: {model_args.train_strategy}")
         max_layer_num = -1
         for name, _ in model.get_model().vision_tower.named_parameters():
             if 'vision_model.encoder.layers.' in name:
@@ -504,13 +508,20 @@ def train(attn_implementation=None):
                 max_layer_num = max(max_layer_num, layer_num)
         print(max_layer_num)
 
-        # 第一步：冻结除vision_tower
+        # 第一步：冻结除vision_tower外的参数，根据train_strategy决定是否包含mm_projector
         for name, param in model.named_parameters():
-            # if "vision_tower" not in name and "mm_projector" not in name:
-            if "vision_tower" not in name:
-                param.requires_grad = False
+            if model_args.train_strategy == "encoder_projector":
+                # 训练encoder + projector模式：只冻结非vision_tower和非mm_projector的参数
+                if "vision_tower" not in name and "mm_projector" not in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
             else:
-                param.requires_grad = True
+                # 默认encoder模式：只训练vision_tower
+                if "vision_tower" not in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
 
         # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）
         for name, param in model.get_model().vision_tower.named_parameters():
