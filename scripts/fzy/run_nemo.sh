@@ -7,8 +7,8 @@ python config_modify.py ./checkpoints/disk2/Images/finetune/pr_llm/finetune-imag
 python config_modify.py ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en
 
 # run eval image
-python eval_image/eval_image_all.py --model_path ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en-pr --gpus 0 --datasets ocrbenchv2
-python eval_image/eval_image_all.py --model_path ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en    --gpus 0 --datasets ocrbenchv2
+python eval_image/eval_image_all.py --model_path ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en-pr --gpus 0 --datasets ocrbenchv2 2>&1 | tee eval_nemo_en_pr.log
+python eval_image/eval_image_all.py --model_path ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en    --gpus 0 --datasets ocrbenchv2 2>&1 | tee eval_nemo_en.log
 
 # scp to 9008
 scp -r -P 9008 ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en-pr fzy@900x.fanbb.top:/home7/fzy/checkpoints
