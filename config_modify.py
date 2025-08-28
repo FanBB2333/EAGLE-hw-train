@@ -1,5 +1,6 @@
 import os
 import json
+import argparse
 
 def update_config_files(folder_path):
     # 遍历文件夹及其子文件夹
@@ -24,7 +25,32 @@ def update_config_files(folder_path):
                 except (json.JSONDecodeError, IOError) as e:
                     print(f'无法处理文件 {file_path}: {e}')
 
-# 使用示例：替换为您要检查的文件夹路径
-# folder_to_check = '/home6/fzy/repos/EAGLE/checkpoints/llama_3.2b/Video'
-folder_to_check = '/home6/fzy/repos/EAGLE/checkpoints/finetune-video-llama3.2-3b-fzy-added-4'
-update_config_files(folder_to_check)
+def main():
+    """主函数，处理命令行参数"""
+    parser = argparse.ArgumentParser(
+        description='批量修改config.json文件中的image_aspect_ratio参数',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+示例:
+  python config_modify.py /home6/fzy/repos/EAGLE/checkpoints/finetune-video-llama3.2-3b-fzy-added-4
+        '''
+    )
+    
+    parser.add_argument(
+        'folder_path',
+        help='要处理的文件夹路径'
+    )
+    
+    args = parser.parse_args()
+    
+    folder_to_check = args.folder_path
+    
+    if not os.path.exists(folder_to_check):
+        parser.error(f"文件夹 '{folder_to_check}' 不存在")
+    
+    print(f"开始处理文件夹: {folder_to_check}")
+    update_config_files(folder_to_check)
+    print("处理完成")
+
+if __name__ == "__main__":
+    main()
