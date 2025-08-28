@@ -12,7 +12,7 @@ OCRBench v2 数据集标注工具
 支持的标注方法：
 - vllm: 使用VLLM框架加载模型进行推理（推荐）
 - transformers: 使用transformers库直接加载模型
-- api: 使用预配置的VLLM API服务器（端口58000）
+- api: 使用预配置的VLLM API服务器（端口58072）
 
 支持的数据文件：
 - OCRBench_v2.json: 原始数据
@@ -549,7 +549,7 @@ def label_ocrv2_fallback(model_name_or_path: str, json_data_file: str = "OCRBenc
     
     return results
 
-def check_vllm_server_status(base_url: str = "http://localhost:58000"):
+def check_vllm_server_status(base_url: str = "http://localhost:58072"):
     """检查VLLM服务器状态"""
     import requests
     try:
@@ -584,8 +584,8 @@ def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_dat
     print(f"Using OpenAI API for OCRBench v2 labeling with model: {model_name_or_path}")
     
     # 首先检查VLLM服务器状态
-    base_url = "http://localhost:58000/v1"
-    server_base = "http://localhost:58000"
+    base_url = "http://localhost:58072/v1"
+    server_base = "http://localhost:58072"
     
     if not check_vllm_server_status(server_base):
         raise Exception("VLLM server is not available. Please start it first.")
@@ -608,7 +608,7 @@ def label_ocrv2_api(model_name_or_path: str = "Qwen2.5-VL-7B-Instruct", json_dat
         print(f"Available models: {[model.id for model in models.data]}")
     except Exception as e:
         print(f"Warning: Failed to connect to VLLM server: {e}")
-        print("Please make sure VLLM server is running on port 58000")
+        print("Please make sure VLLM server is running on port 58072")
         print("Start server with: ./start_vllm_server.sh")
     
     # 加载数据集
@@ -777,13 +777,14 @@ if __name__ == '__main__':
     
     if args.method == "api":
         print("Using OpenAI API method with VLLM server...")
-        print("Note: Make sure VLLM server is running on port 58000")
+        print("Note: Make sure VLLM server is running on port 58072")
         print("Start server with: ./start_vllm_server.sh")
         print("Test connection with: python test_vllm_api.py")
         
         try:
             results = label_ocrv2_api(
-                model_name_or_path="Qwen2.5-VL-7B-Instruct",  # 使用VLLM服务器上的模型名
+                # model_name_or_path="Qwen2.5-VL-7B-Instruct",  # 使用VLLM服务器上的模型名
+                model_name_or_path="Qwen2.5-VL-72B-Instruct-AWQ",  # 使用VLLM服务器上的模型名
                 json_data_file=args.json_data_file,
                 output_dir=args.output_dir
             )
