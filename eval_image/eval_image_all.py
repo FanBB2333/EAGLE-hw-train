@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument(
         "--model_path", 
         # default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle",
-        default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B",
+        default="./checkpoints/Images/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B-en-pr",
         help="Path to the pretrained model"
     )
     parser.add_argument(

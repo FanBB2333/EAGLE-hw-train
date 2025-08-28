@@ -76,6 +76,7 @@ PREFERRED_DTYPE = torch.bfloat16 if SUPPORTS_BFLOAT16 else torch.float16
 print(f"Data type support check: bfloat16={SUPPORTS_BFLOAT16}, using {PREFERRED_DTYPE}")
 
 QWEN25VL7B = "/home6/fzy/models/Qwen2.5-VL-7B-Instruct"
+QWEN25VL72B_AWQ = "/home7/fzy/models/Qwen/Qwen2.5-VL-72B-Instruct-AWQ"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -758,13 +759,13 @@ if __name__ == '__main__':
     import argparse
     
     parser = argparse.ArgumentParser(description="Label OCRBench v2 dataset using different methods")
-    parser.add_argument("--model_path", type=str, default=QWEN25VL7B, 
+    parser.add_argument("--model_path", type=str, default=QWEN25VL72B_AWQ, 
                        help="Path to the model (for vllm and transformers methods)")
     parser.add_argument("--json_data_file", type=str, default="OCRBench_v2.json",
                        help="OCRBench v2 JSON data file name")
     parser.add_argument("--output_dir", type=str, default=None,
                        help="Output directory (if None, uses default)")
-    parser.add_argument("--method", type=str, default="vllm", choices=["vllm", "transformers", "api"],
+    parser.add_argument("--method", type=str, default="transformers", choices=["vllm", "transformers", "api"],
                        help="Method to use for labeling: vllm, transformers, or api")
     
     args = parser.parse_args()
