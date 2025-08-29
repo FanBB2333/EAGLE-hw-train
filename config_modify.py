@@ -32,12 +32,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  python config_modify.py /home6/fzy/repos/EAGLE/checkpoints/finetune-video-llama3.2-3b-fzy-added-4
+  python config_modify.py ./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr
         '''
     )
     
     parser.add_argument(
         'folder_path',
+        default='./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr',
         help='要处理的文件夹路径'
     )
     
