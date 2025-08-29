@@ -39,9 +39,9 @@ CUDA_VISIBLE_DEVICES='0' python -m torch.distributed.run \
     --output_dir ./checkpoints/$NAME \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 6 \
+    --gradient_accumulation_steps 4 \
     --save_strategy "epoch" \
-    --learning_rate 5e-4 \
+    --learning_rate 3e-5 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
@@ -53,7 +53,7 @@ CUDA_VISIBLE_DEVICES='0' python -m torch.distributed.run \
     --dataloader_prefetch_factor 3 \
     --lazy_preprocess True \
     --report_to tensorboard \
-    --num_train_epochs 4 \
+    --num_train_epochs 2 \
     --run_name ${NAME} \
     --train_strategy encoder_projector \
 

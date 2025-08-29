@@ -84,8 +84,8 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--json_data",
-        # default="OCRBench_v2_new_all.json",
-        default="OCRBench_v2.json",
+        default="OCRBench_v2_new_all.json",
+        # default="OCRBench_v2.json",
         type=str,
         help="Name of the JSON data file to use for evaluation (e.g., OCRBench_v2_new_5.json)",
     )

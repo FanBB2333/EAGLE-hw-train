@@ -110,8 +110,8 @@ class ModelArguments:
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
     
-    # Training strategy control: "encoder" or "encoder_projector"
-    train_strategy: Optional[str] = field(default="encoder", metadata={"help": "Choose training strategy: 'encoder' (only vision tower) or 'encoder_projector' (vision tower + mm_projector)"})
+    # Training strategy control: "encoder", "encoder_projector", or "projector"
+    train_strategy: Optional[str] = field(default="encoder", metadata={"help": "Choose training strategy: 'encoder' (only vision tower), 'encoder_projector' (vision tower + mm_projector), or 'projector' (only mm_projector)"})
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -516,6 +516,12 @@ def train(attn_implementation=None):
                     param.requires_grad = False
                 else:
                     param.requires_grad = True
+            elif model_args.train_strategy == "projector":
+                # 训练projector模式：只训练mm_projector
+                if "mm_projector" not in name:
+                    param.requires_grad = False
+                else:
+                    param.requires_grad = True
             else:
                 # 默认encoder模式：只训练vision_tower
                 if "vision_tower" not in name:
@@ -523,12 +529,13 @@ def train(attn_implementation=None):
                 else:
                     param.requires_grad = True
 
-        # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）
-        for name, param in model.get_model().vision_tower.named_parameters():
-            if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
-                param.requires_grad = False
-            if 'vision_tower.post_layernorm' in name:
-                param.requires_grad = False
+        # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）- 仅在训练encoder相关模式时生效
+        if model_args.train_strategy in ["encoder", "encoder_projector"]:
+            for name, param in model.get_model().vision_tower.named_parameters():
+                if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
+                    param.requires_grad = False
+                if 'vision_tower.post_layernorm' in name:
+                    param.requires_grad = False
 
         # en_pr_llm
         # for name, param in model.get_model().vision_tower.named_parameters():
