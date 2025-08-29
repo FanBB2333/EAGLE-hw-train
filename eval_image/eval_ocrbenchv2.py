@@ -31,8 +31,9 @@ def parse_eval_args() -> argparse.Namespace:
     parser.add_argument("--config", default="", help="Path to a yaml file specifying all eval arguments, will ignore cli arguments if specified")
     parser.add_argument(
         "--model_path", 
-        default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B-en-pr"),
+        # default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B-en-pr"),
         # default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en-pr"),
+        default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr"),
         help="Pretrained path of model"
     )
     parser.add_argument(
@@ -83,7 +84,8 @@ def parse_eval_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--json_data",
-        default="OCRBench_v2_new_all.json",
+        # default="OCRBench_v2_new_all.json",
+        default="OCRBench_v2.json",
         type=str,
         help="Name of the JSON data file to use for evaluation (e.g., OCRBench_v2_new_5.json)",
     )
@@ -298,12 +300,40 @@ def evaluate_predictions(inference_results: dict = None, args: Union[argparse.Na
                 model_dir = os.path.join(base_output_dir, model_folder_name)
                 date_dir = os.path.join(model_dir, current_date)
                 
-                # Check if args.output_path is a directory or file
-                if os.path.isdir(args.output_path):
+                # Check if args.output_path is a directory or file (same logic as run_inference)
+                if os.path.isdir(args.output_path) or args.output_path.endswith('/'):
                     # If it's a directory, append a default filename
                     full_output_path = os.path.join(date_dir, "predictions.json")
                 else:
+                    # If it's a file path, use the basename
                     full_output_path = os.path.join(date_dir, os.path.basename(args.output_path))
+                
+                # If the file doesn't exist with current date, try to find it in other date directories
+                if not os.path.exists(full_output_path) and os.path.exists(model_dir):
+                    print(f"Prediction file not found for current date ({current_date}), searching in other date directories...")
+                    target_filename = os.path.basename(full_output_path)
+                    
+                    for date_folder in sorted(os.listdir(model_dir), reverse=True):  # Try latest dates first
+                        date_folder_path = os.path.join(model_dir, date_folder)
+                        if os.path.isdir(date_folder_path):
+                            # First try the exact filename
+                            candidate_file = os.path.join(date_folder_path, target_filename)
+                            if os.path.exists(candidate_file):
+                                full_output_path = candidate_file
+                                print(f"Found prediction file in date directory: {date_folder}")
+                                break
+                            
+                            # If not found, try common prediction filenames as fallback
+                            for fallback_name in ["predictions.json", "images", "all_bbox.json"]:
+                                fallback_file = os.path.join(date_folder_path, fallback_name)
+                                if os.path.exists(fallback_file):
+                                    full_output_path = fallback_file
+                                    print(f"Found fallback prediction file in date directory {date_folder}: {fallback_name}")
+                                    break
+                            else:
+                                continue
+                            break
+                
             else:
                 # Use output_path directly if it already contains model folder
                 full_output_path = args.output_path
