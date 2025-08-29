@@ -37,7 +37,7 @@ def main():
     )
     
     parser.add_argument(
-        'folder_path',
+        '--folder_path', '-f',
         default='./checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr',
         help='要处理的文件夹路径'
     )
