@@ -33,7 +33,8 @@ def parse_eval_args() -> argparse.Namespace:
         "--model_path", 
         # default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-Qwen2.5_VL_7B-en-pr"),
         # default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-nemotron-8b-en-pr"),
-        default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr"),
+        # default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr"),
+        default=str(PROJECT_ROOT / "checkpoints/disk2/Images/finetune/pr_llm/finetune-image-llama3.2-3b-fzy-qwen2vl-batch-llava-eagle-ocrb-qwen2.5_VL-72b-en-pr-0.221/checkpoint-4908"),
         help="Pretrained path of model"
     )
     parser.add_argument(
