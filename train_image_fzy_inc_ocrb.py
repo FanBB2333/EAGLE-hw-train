@@ -502,6 +502,19 @@ def train(attn_implementation=None):
                 max_layer_num = max(max_layer_num, layer_num)
         print(max_layer_num)
 
+        # 第一步：冻结除vision_tower和mm_projector之外的所有参数
+        for name, param in model.named_parameters():
+            if "vision_tower" not in name:
+                if "mm_projector" not in name:
+                    param.requires_grad = False
+        
+        # 第二步：在vision_tower中冻结特定层（最后一层和post_layernorm）
+        for name, param in model.get_model().vision_tower.named_parameters():
+            if 'vision_tower.encoder.layers.'  + str(max_layer_num) in name:
+                param.requires_grad = False
+            if 'vision_tower.post_layernorm' in name:
+                param.requires_grad = False
+
         # en_pr_llm
         # for name, param in model.get_model().vision_tower.named_parameters():
         #     if 'vision_model.encoder.layers.'  + str(max_layer_num) in name:
